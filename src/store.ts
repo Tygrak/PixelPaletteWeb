@@ -1,5 +1,5 @@
 import { rgb, RGB } from './color';
-import { cloneImage, placeImageCentered, resizeImage } from './image';
+import { cloneImage, placeImageCentered, resizeCanvasImage, resizeImage } from './image';
 import { cloneLayer, compositeLayers, copyLayer, createLayer, Layer } from './layers';
 import { Selection } from './selection';
 import { ToolId } from './tools';
@@ -29,6 +29,11 @@ export class Store {
   softBrush = false;
   wandTolerance = 32;
   fillTolerance = 32;
+
+  textSize = 48;
+  textFont = 'sans-serif';
+  textBold = false;
+  textItalic = false;
 
   selection: Selection | null = null;
 
@@ -207,6 +212,23 @@ export class Store {
     this.notify();
   }
 
+  // Resizes the canvas without scaling content. The original image is placed
+  // at (left, top); new area is filled with the neighboring (edge) color.
+  resizeCanvas(width: number, height: number, left: number, top: number): void {
+    if (width < 1 || height < 1 || this.layers.length === 0) {
+      return;
+    }
+    this.pushHistory();
+    this.layers = this.layers.map((layer) => ({
+      ...layer,
+      image: resizeCanvasImage(layer.image, width, height, left, top),
+    }));
+    this.width = width;
+    this.height = height;
+    this.selection = null;
+    this.notify();
+  }
+
   restore(): void {
     if (!this.initial) {
       return;
@@ -233,15 +255,27 @@ export class Store {
     this.notify();
   }
 
+  // Merges the active layer down into the layer beneath it.
   mergeLayers(): void {
-    if (this.layers.length < 2) {
+    if (this.layers.length < 2 || this.activeIndex === 0) {
       return;
     }
+    const upperIndex = this.activeIndex;
+    const lowerIndex = this.activeIndex - 1;
     this.pushHistory();
-    const merged = compositeLayers(this.layers, this.width, this.height);
-    const layer = createLayer(this.width, this.height, 'Merged', merged);
-    this.layers = [layer];
-    this.activeIndex = 0;
+    const lower = this.layers[lowerIndex];
+    const upper = this.layers[upperIndex];
+    const merged = compositeLayers([lower, upper], this.width, this.height);
+    const mergedLayer: Layer = {
+      ...lower,
+      image: merged,
+      visible: true,
+      opacity: 1,
+      offsetX: 0,
+      offsetY: 0,
+    };
+    this.layers.splice(lowerIndex, 2, mergedLayer);
+    this.activeIndex = lowerIndex;
     this.selection = null;
     this.notify();
   }
@@ -270,6 +304,36 @@ export class Store {
       return;
     }
     this.layers[index] = { ...layer, visible };
+    this.notify();
+  }
+
+  renameLayer(index: number, name: string): void {
+    const layer = this.layers[index];
+    if (!layer || layer.name === name || name.trim() === '') {
+      return;
+    }
+    this.pushHistory();
+    this.layers[index] = { ...layer, name };
+    this.emit();
+  }
+
+  // Reorders layers from a bottom-to-top list of layer ids.
+  reorderLayers(orderIds: number[]): void {
+    if (orderIds.length !== this.layers.length) {
+      return;
+    }
+    const byId = new Map(this.layers.map((layer) => [layer.id, layer]));
+    const reordered = orderIds
+      .map((id) => byId.get(id))
+      .filter((layer): layer is Layer => layer !== undefined);
+    if (reordered.length !== this.layers.length) {
+      return;
+    }
+    const activeId = this.layers[this.activeIndex]?.id;
+    this.pushHistory();
+    this.layers = reordered;
+    const newActive = this.layers.findIndex((layer) => layer.id === activeId);
+    this.activeIndex = newActive >= 0 ? newActive : 0;
     this.notify();
   }
 
@@ -307,6 +371,26 @@ export class Store {
 
   setFillTolerance(tolerance: number): void {
     this.fillTolerance = tolerance;
+    this.emit();
+  }
+
+  setTextSize(size: number): void {
+    this.textSize = size;
+    this.emit();
+  }
+
+  setTextFont(font: string): void {
+    this.textFont = font;
+    this.emit();
+  }
+
+  setTextBold(bold: boolean): void {
+    this.textBold = bold;
+    this.emit();
+  }
+
+  setTextItalic(italic: boolean): void {
+    this.textItalic = italic;
     this.emit();
   }
 

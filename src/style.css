@@ -607,3 +607,35 @@ input[type='checkbox'] {
   outline: 2px solid #fff;
   outline-offset: 1px;
 }
+
+/* --- Resize drag preview --- */
+.resize-preview {
+  position: absolute;
+  display: none;
+  border: 1px dashed #ffffff;
+  box-shadow: 0 0 0 1px #000000;
+  pointer-events: none;
+  z-index: 5;
+}
+
+.layer-item {
+  user-select: none;
+}
+
+.layer-item.dragging {
+  opacity: 0.5;
+}
+
+.layer-item.drop-above {
+  box-shadow: inset 0 2px 0 #ffffff;
+}
+
+.layer-item.drop-below {
+  box-shadow: inset 0 -2px 0 #ffffff;
+}
+
+.layer-rename {
+  flex: 1;
+  min-width: 0;
+  padding: 2px 4px;
+}

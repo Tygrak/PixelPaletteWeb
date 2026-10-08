@@ -57,6 +57,31 @@ export function cloneImage(img: ImageData): ImageData {
   return result;
 }
 
+// Returns a copy of the image shifted by (offsetX, offsetY); pixels moved off
+// the canvas are dropped and vacated areas become transparent.
+export function offsetImage(source: ImageData, offsetX: number, offsetY: number): ImageData {
+  const out = createEmptyImage(source.width, source.height);
+  for (let y = 0; y < source.height; y++) {
+    const sourceY = y - offsetY;
+    if (sourceY < 0 || sourceY >= source.height) {
+      continue;
+    }
+    for (let x = 0; x < source.width; x++) {
+      const sourceX = x - offsetX;
+      if (sourceX < 0 || sourceX >= source.width) {
+        continue;
+      }
+      const sourcePos = (sourceX + sourceY * source.width) * 4;
+      const destPos = (x + y * source.width) * 4;
+      out.data[destPos] = source.data[sourcePos];
+      out.data[destPos + 1] = source.data[sourcePos + 1];
+      out.data[destPos + 2] = source.data[sourcePos + 2];
+      out.data[destPos + 3] = source.data[sourcePos + 3];
+    }
+  }
+  return out;
+}
+
 // Places a source image in the center of a (width x height) transparent image.
 export function placeImageCentered(width: number, height: number, source: ImageData): ImageData {
   const out = createEmptyImage(width, height);
@@ -122,6 +147,43 @@ export function resizeImage(img: ImageData, width: number, height: number): Imag
   ctx.imageSmoothingEnabled = true;
   ctx.drawImage(source, 0, 0, width, height);
   return ctx.getImageData(0, 0, width, height);
+}
+
+// Resizes the canvas without scaling the content: the original image is placed
+// at (left, top) in the new canvas. Areas outside the source are filled with
+// the nearest edge color (replicate), and areas outside the new canvas are
+// cropped. Content is never resampled.
+export function resizeCanvasImage(
+  source: ImageData,
+  width: number,
+  height: number,
+  left: number,
+  top: number,
+): ImageData {
+  const out = createEmptyImage(width, height);
+  for (let y = 0; y < height; y++) {
+    let sourceY = y + top;
+    if (sourceY < 0) {
+      sourceY = 0;
+    } else if (sourceY >= source.height) {
+      sourceY = source.height - 1;
+    }
+    for (let x = 0; x < width; x++) {
+      let sourceX = x + left;
+      if (sourceX < 0) {
+        sourceX = 0;
+      } else if (sourceX >= source.width) {
+        sourceX = source.width - 1;
+      }
+      const sourcePos = (sourceX + sourceY * source.width) * 4;
+      const destPos = (x + y * width) * 4;
+      out.data[destPos] = source.data[sourcePos];
+      out.data[destPos + 1] = source.data[sourcePos + 1];
+      out.data[destPos + 2] = source.data[sourcePos + 2];
+      out.data[destPos + 3] = source.data[sourcePos + 3];
+    }
+  }
+  return out;
 }
 
 export type Rotation = 90 | 180 | 270;

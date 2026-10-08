@@ -21,10 +21,19 @@ import {
   selectionBounds,
 } from './floating';
 import { toolIcon } from './icons';
-import { createEmptyImage, getPixel, resizeImage } from './image';
+import { createEmptyImage, getPixel, offsetImage, resizeImage } from './image';
 import { medianCut } from './palette';
-import { polygonSelection, rectSelection, selectionOverlay, Selection, wandSelection } from './selection';
+import {
+  combineSelection,
+  polygonSelection,
+  rectSelection,
+  selectionOverlay,
+  Selection,
+  SelectionMode,
+  wandSelection,
+} from './selection';
 import { Store } from './store';
+import { drawText } from './text';
 import { floodFill, paintStroke, stampBrush, ToolId, toolForShortcut, TOOLS } from './tools';
 import { openAdjustmentsPanel } from './ui/adjustmentsPanel';
 import { openDitherPanel } from './ui/ditherPanel';
@@ -80,6 +89,9 @@ function currentBox(): Box | null {
     if (bounds) {
       return boxFromBounds(bounds);
     }
+  }
+  if (store.activeTool === 'resize' && store.width > 0) {
+    return { cx: store.width / 2, cy: store.height / 2, w: store.width, h: store.height, rotation: 0 };
   }
   return null;
 }
@@ -207,6 +219,8 @@ const canvasPlaceholder = h('div', {
   text: 'Open an image to begin, or press Ctrl+V to paste one',
 });
 const canvasArea = h('div', { class: 'canvas-area' }, [canvasStack, canvasPlaceholder]);
+const resizePreview = h('div', { class: 'resize-preview' });
+canvasArea.append(resizePreview);
 const dock = h('div', { class: 'dock hidden' });
 const dockResizer = h('div', { class: 'dock-resizer' });
 
@@ -419,6 +433,9 @@ const toolbar = h('div', { class: 'toolbar' }, [
 // --- Tool strip ---
 
 function selectTool(tool: ToolId): void {
+  if (textEditing) {
+    commitText();
+  }
   if (floating && tool !== 'move') {
     commitFloating();
   }
@@ -585,19 +602,34 @@ resizeHeightInput.addEventListener('input', () => {
 resizeLock.addEventListener('change', () => {
   resizeRatio = readNumber(resizeWidthInput) / Math.max(1, readNumber(resizeHeightInput));
 });
+const resizeScaleCheckbox = document.createElement('input');
+resizeScaleCheckbox.type = 'checkbox';
+
+// Applies the width/height fields (used by both Enter/blur and the button).
+function applyResizeFromInputs(): void {
+  if (!store.current) {
+    return;
+  }
+  const width = Math.max(1, Math.round(readNumber(resizeWidthInput)));
+  const height = Math.max(1, Math.round(readNumber(resizeHeightInput)));
+  if (width === store.width && height === store.height) {
+    return;
+  }
+  commitFloating();
+  if (resizeScaleCheckbox.checked) {
+    store.resizeDocument(width, height);
+  } else {
+    store.resizeCanvas(width, height, 0, 0);
+  }
+}
+
+resizeWidthInput.addEventListener('change', applyResizeFromInputs);
+resizeHeightInput.addEventListener('change', applyResizeFromInputs);
+
 const resizeApplyButton = h('button', {
   class: 'btn',
   text: 'Resize Image',
-  onclick: () => {
-    if (!store.current) {
-      return;
-    }
-    commitFloating();
-    store.resizeDocument(
-      Math.max(1, Math.round(readNumber(resizeWidthInput))),
-      Math.max(1, Math.round(readNumber(resizeHeightInput))),
-    );
-  },
+  onclick: () => applyResizeFromInputs(),
 });
 const resizeSection = h('div', { class: 'options-section' }, [
   h('span', { class: 'row-label', text: 'Width' }),
@@ -606,11 +638,61 @@ const resizeSection = h('div', { class: 'options-section' }, [
   resizeHeightInput,
   h('span', { class: 'row-label', text: 'Lock' }),
   resizeLock,
+  h('span', { class: 'row-label', text: 'Scale' }),
+  resizeScaleCheckbox,
   resizeApplyButton,
 ]);
 
 const hintLabel = h('span', { class: 'row-label' });
 const hintSection = h('div', { class: 'options-section' }, [hintLabel]);
+
+const textSizeInput = numberInput(store.textSize, 1, 500, 1, () => store.setTextSize(readNumber(textSizeInput)));
+
+const textFontSelect = h('select', { class: 'select' });
+for (const [value, label] of [
+  ['sans-serif', 'Sans'],
+  ['serif', 'Serif'],
+  ['monospace', 'Mono'],
+  ['cursive', 'Cursive'],
+  ['fantasy', 'Fantasy'],
+] as [string, string][]) {
+  textFontSelect.append(h('option', { value, text: label }));
+}
+textFontSelect.value = store.textFont;
+textFontSelect.addEventListener('change', () => store.setTextFont(textFontSelect.value));
+
+const textBoldCheckbox = document.createElement('input');
+textBoldCheckbox.type = 'checkbox';
+textBoldCheckbox.checked = store.textBold;
+textBoldCheckbox.addEventListener('change', () => store.setTextBold(textBoldCheckbox.checked));
+
+const textItalicCheckbox = document.createElement('input');
+textItalicCheckbox.type = 'checkbox';
+textItalicCheckbox.checked = store.textItalic;
+textItalicCheckbox.addEventListener('change', () => store.setTextItalic(textItalicCheckbox.checked));
+
+const textSwatch = h('span', { class: 'palette-swatch small' });
+const textPickButton = h('button', {
+  class: 'btn',
+  text: 'Color',
+  onclick: async () => {
+    const chosen = await ctx.selectColor(store.foreground);
+    store.setForeground(chosen);
+  },
+});
+
+const textSection = h('div', { class: 'options-section' }, [
+  h('span', { class: 'row-label', text: 'Size' }),
+  textSizeInput,
+  h('span', { class: 'row-label', text: 'Font' }),
+  textFontSelect,
+  h('span', { class: 'row-label', text: 'Bold' }),
+  textBoldCheckbox,
+  h('span', { class: 'row-label', text: 'Italic' }),
+  textItalicCheckbox,
+  textSwatch,
+  textPickButton,
+]);
 
 const optionsBar = h('div', { class: 'options-bar' }, [
   brushSection,
@@ -618,6 +700,7 @@ const optionsBar = h('div', { class: 'options-bar' }, [
   wandSection,
   zoomSection,
   resizeSection,
+  textSection,
   paletteSection,
   hintSection,
 ]);
@@ -765,6 +848,71 @@ function getSelectionCanvas(mask: Uint8Array): HTMLCanvasElement {
 
 let hoverPoint: { x: number; y: number } | null = null;
 
+// In-progress text (Text tool): typed directly on the canvas, committed on Enter.
+let textEditing: { x: number; y: number; content: string } | null = null;
+let caretOn = true;
+let caretTimer = 0;
+
+function startCaretBlink(): void {
+  stopCaretBlink();
+  caretOn = true;
+  caretTimer = window.setInterval(() => {
+    caretOn = !caretOn;
+    redrawOverlay();
+  }, 500);
+}
+
+function stopCaretBlink(): void {
+  if (caretTimer) {
+    window.clearInterval(caretTimer);
+    caretTimer = 0;
+  }
+}
+
+function textFontString(): string {
+  return `${store.textItalic ? 'italic ' : ''}${store.textBold ? 'bold ' : ''}${store.textSize}px ${store.textFont}`;
+}
+
+function commitText(): void {
+  if (!textEditing) {
+    return;
+  }
+  const { x, y, content } = textEditing;
+  textEditing = null;
+  stopCaretBlink();
+  const layer = store.activeLayer;
+  if (content.trim() && layer) {
+    const updated = drawText(
+      layer.image,
+      store.width,
+      store.height,
+      layer.offsetX,
+      layer.offsetY,
+      content,
+      x,
+      y,
+      {
+        size: store.textSize,
+        font: store.textFont,
+        bold: store.textBold,
+        italic: store.textItalic,
+        color: store.foreground,
+      },
+    );
+    ctx.applyImage(updated);
+  }
+  redrawOverlay();
+}
+
+function cancelText(): void {
+  if (!textEditing) {
+    return;
+  }
+  textEditing = null;
+  stopCaretBlink();
+  redrawOverlay();
+}
+
 function redrawOverlay(): void {
   const context = overlayCanvas.getContext('2d');
   if (!context) {
@@ -776,9 +924,22 @@ function redrawOverlay(): void {
   } else if (store.selection && store.width > 0) {
     context.drawImage(getSelectionCanvas(store.selection), 0, 0);
   }
-  const box = store.activeTool === 'move' ? currentBox() : null;
+  const box = store.activeTool === 'move' || store.activeTool === 'resize' ? currentBox() : null;
   if (box) {
     drawBoxToContext(context, box, handleHalfSize());
+  }
+  if (textEditing) {
+    context.save();
+    context.font = textFontString();
+    context.textBaseline = 'top';
+    context.fillStyle = `rgb(${store.foreground.r}, ${store.foreground.g}, ${store.foreground.b})`;
+    context.fillText(textEditing.content, textEditing.x, textEditing.y);
+    if (caretOn) {
+      const width = context.measureText(textEditing.content).width;
+      context.fillStyle = 'rgba(255, 255, 255, 0.9)';
+      context.fillRect(textEditing.x + width + 1, textEditing.y, Math.max(1, store.textSize * 0.06), store.textSize);
+    }
+    context.restore();
   }
   if (hoverPoint && store.current && (store.activeTool === 'brush' || store.activeTool === 'eraser')) {
     const radius = Math.max(0.5, store.brushSize / 2);
@@ -811,13 +972,54 @@ let selecting: {
   type: 'marquee' | 'lasso';
   startX: number;
   startY: number;
+  startClientX: number;
+  startClientY: number;
   currentX: number;
   currentY: number;
+  moved: boolean;
   points: { x: number; y: number }[];
 } | null = null;
 
+// Selection boolean mode captured when a selection drag starts.
+let selectionMode: SelectionMode = 'replace';
+let selectionBase: Selection | null = null;
+
+function selectionModeFor(event: PointerEvent): SelectionMode {
+  if (event.shiftKey) {
+    return 'add';
+  }
+  if (event.altKey) {
+    return 'subtract';
+  }
+  return 'replace';
+}
+
 let moving: { startClientX: number; startClientY: number; offsetX: number; offsetY: number } | null = null;
 let sampling = false;
+
+let resizeDrag: {
+  handle: string;
+  startWidth: number;
+  startHeight: number;
+  startBox: { cx: number; cy: number; w: number; h: number };
+} | null = null;
+let resizePending: { width: number; height: number; left: number; top: number } | null = null;
+
+function showResizePreview(left: number, top: number, width: number, height: number): void {
+  const rect = canvas.getBoundingClientRect();
+  const areaRect = canvasArea.getBoundingClientRect();
+  const sx = rect.left - areaRect.left + (left / store.width) * rect.width;
+  const sy = rect.top - areaRect.top + (top / store.height) * rect.height;
+  resizePreview.style.display = 'block';
+  resizePreview.style.left = `${sx}px`;
+  resizePreview.style.top = `${sy}px`;
+  resizePreview.style.width = `${(width / store.width) * rect.width}px`;
+  resizePreview.style.height = `${(height / store.height) * rect.height}px`;
+}
+
+function hideResizePreview(): void {
+  resizePreview.style.display = 'none';
+}
 
 function beginPan(event: PointerEvent): void {
   panning = true;
@@ -866,6 +1068,16 @@ function beginMoveInteraction(event: PointerEvent, pointX: number, pointY: numbe
     startAngle: Math.atan2(pointY - active.cy, pointX - active.cx),
     startRotation: active.rotation,
   };
+}
+
+function bakeActiveLayerOffset(): void {
+  const layer = store.activeLayer;
+  if (!layer || (layer.offsetX === 0 && layer.offsetY === 0)) {
+    return;
+  }
+  const baked = offsetImage(layer.image, layer.offsetX, layer.offsetY);
+  store.layers[store.activeIndex] = { ...layer, image: baked, offsetX: 0, offsetY: 0 };
+  store.notify();
 }
 
 canvas.addEventListener('pointerdown', (event) => {
@@ -937,28 +1149,68 @@ canvas.addEventListener('pointerdown', (event) => {
       break;
     }
     case 'marquee':
-      selecting = { type: 'marquee', startX: point.x, startY: point.y, currentX: point.x, currentY: point.y, points: [] };
+      selectionBase = store.selection;
+      selectionMode = selectionModeFor(event);
+      selecting = {
+        type: 'marquee',
+        startX: point.x,
+        startY: point.y,
+        startClientX: event.clientX,
+        startClientY: event.clientY,
+        currentX: point.x,
+        currentY: point.y,
+        moved: false,
+        points: [],
+      };
       break;
     case 'lasso':
+      selectionBase = store.selection;
+      selectionMode = selectionModeFor(event);
       selecting = {
         type: 'lasso',
         startX: point.x,
         startY: point.y,
+        startClientX: event.clientX,
+        startClientY: event.clientY,
         currentX: point.x,
         currentY: point.y,
+        moved: false,
         points: [{ x: point.x, y: point.y }],
       };
       break;
     case 'wand': {
       const mask = wandSelection(img, Math.floor(point.x), Math.floor(point.y), store.wandTolerance);
-      store.setSelection(mask);
+      store.setSelection(combineSelection(store.selection, mask, selectionModeFor(event)));
       break;
     }
     case 'move':
       beginMoveInteraction(event, point.x, point.y);
       break;
-    case 'resize':
+    case 'text': {
+      if (textEditing) {
+        commitText();
+      }
+      textEditing = { x: point.x, y: point.y, content: '' };
+      startCaretBlink();
+      canvas.style.cursor = 'text';
+      redrawOverlay();
       break;
+    }
+    case 'resize': {
+      const box = currentBox();
+      if (box) {
+        const hit = hitTestBox(box, point.x, point.y, hitTolerance());
+        if (hit && hit !== 'inside' && hit !== 'rotate') {
+          resizeDrag = {
+            handle: hit,
+            startWidth: store.width,
+            startHeight: store.height,
+            startBox: { cx: box.cx, cy: box.cy, w: box.w, h: box.h },
+          };
+        }
+      }
+      break;
+    }
   }
 });
 
@@ -1007,6 +1259,9 @@ canvas.addEventListener('pointermove', (event) => {
   if (selecting) {
     selecting.currentX = point.x;
     selecting.currentY = point.y;
+    if (Math.abs(event.clientX - selecting.startClientX) + Math.abs(event.clientY - selecting.startClientY) > 3) {
+      selecting.moved = true;
+    }
     if (selecting.type === 'lasso') {
       const last = selecting.points[selecting.points.length - 1];
       if (Math.hypot(point.x - last.x, point.y - last.y) > 1) {
@@ -1017,7 +1272,7 @@ canvas.addEventListener('pointermove', (event) => {
       selecting.type === 'marquee'
         ? rectSelection(store.width, store.height, selecting.startX, selecting.startY, point.x, point.y)
         : polygonSelection(store.width, store.height, selecting.points);
-    store.setSelection(preview);
+    store.setSelection(combineSelection(selectionBase, preview, selectionMode));
     return;
   }
 
@@ -1026,6 +1281,37 @@ canvas.addEventListener('pointermove', (event) => {
     redrawOverlay();
     canvas.style.cursor =
       transformDrag.mode === 'move' ? 'grabbing' : cursorForHit(transformDrag.handle as BoxHit) ?? '';
+    return;
+  }
+
+  if (resizeDrag) {
+    const scaled = computeScale(
+      {
+        cx: resizeDrag.startBox.cx,
+        cy: resizeDrag.startBox.cy,
+        scaleX: 1,
+        scaleY: 1,
+        rotation: 0,
+        originW: resizeDrag.startWidth,
+        originH: resizeDrag.startHeight,
+      },
+      resizeDrag.handle,
+      point.x,
+      point.y,
+      event.shiftKey,
+    );
+    const width = Math.max(1, Math.round(resizeDrag.startWidth * scaled.scaleX));
+    const height = Math.max(1, Math.round(resizeDrag.startHeight * scaled.scaleY));
+    const left = Math.round(scaled.cx - width / 2);
+    const top = Math.round(scaled.cy - height / 2);
+    resizePending = { width, height, left, top };
+    if (document.activeElement !== resizeWidthInput) {
+      resizeWidthInput.value = String(width);
+    }
+    if (document.activeElement !== resizeHeightInput) {
+      resizeHeightInput.value = String(height);
+    }
+    showResizePreview(left, top, width, height);
     return;
   }
 
@@ -1091,7 +1377,12 @@ function applyTransform(x: number, y: number, shiftKey: boolean): void {
 }
 
 function updateHoverCursor(x: number, y: number): void {
-  if (store.activeTool !== 'move') {
+  const tool = store.activeTool;
+  if (tool === 'text') {
+    canvas.style.cursor = 'text';
+    return;
+  }
+  if (tool !== 'move' && tool !== 'resize') {
     canvas.style.cursor = '';
     return;
   }
@@ -1100,8 +1391,12 @@ function updateHoverCursor(x: number, y: number): void {
     canvas.style.cursor = '';
     return;
   }
-  const cursor = cursorForHit(hitTestBox(box, x, y, hitTolerance()));
-  canvas.style.cursor = cursor ?? '';
+  const hit = hitTestBox(box, x, y, hitTolerance());
+  if (tool === 'resize' && (hit === 'inside' || hit === 'rotate')) {
+    canvas.style.cursor = '';
+    return;
+  }
+  canvas.style.cursor = cursorForHit(hit) ?? '';
 }
 
 function endPointer(event: PointerEvent): void {
@@ -1123,18 +1418,45 @@ function endPointer(event: PointerEvent): void {
     strokeImage = null;
   }
   if (selecting) {
-    if (selecting.type === 'marquee') {
-      store.setSelection(
-        rectSelection(store.width, store.height, selecting.startX, selecting.startY, selecting.currentX, selecting.currentY),
-      );
+    if (selecting.type === 'marquee' && !selecting.moved) {
+      // A plain click with the marquee clears the selection.
+      store.clearSelection();
     } else {
-      store.setSelection(polygonSelection(store.width, store.height, selecting.points));
+      const mask =
+        selecting.type === 'marquee'
+          ? rectSelection(store.width, store.height, selecting.startX, selecting.startY, selecting.currentX, selecting.currentY)
+          : polygonSelection(store.width, store.height, selecting.points);
+      store.setSelection(combineSelection(selectionBase, mask, selectionMode));
     }
     selecting = null;
+    selectionBase = null;
   }
-  moving = null;
+  if (moving) {
+    moving = null;
+    bakeActiveLayerOffset();
+  }
   sampling = false;
   transformDrag = null;
+
+  if (resizeDrag) {
+    const pending = resizePending;
+    resizeDrag = null;
+    resizePending = null;
+    hideResizePreview();
+    if (
+      pending &&
+      (pending.width !== store.width ||
+        pending.height !== store.height ||
+        pending.left !== 0 ||
+        pending.top !== 0)
+    ) {
+      if (resizeScaleCheckbox.checked) {
+        store.resizeDocument(pending.width, pending.height);
+      } else {
+        store.resizeCanvas(pending.width, pending.height, pending.left, pending.top);
+      }
+    }
+  }
 }
 
 canvas.addEventListener('pointerup', endPointer);
@@ -1216,6 +1538,36 @@ window.addEventListener('keydown', (event) => {
   const typing =
     target !== null && (target.tagName === 'INPUT' || target.tagName === 'TEXTAREA' || target.isContentEditable);
   const ctrl = event.ctrlKey || event.metaKey;
+
+  if (textEditing) {
+    const editing = textEditing;
+    if (ctrl) {
+      return;
+    }
+    if (event.key === 'Escape') {
+      event.preventDefault();
+      cancelText();
+      return;
+    }
+    if (event.key === 'Enter') {
+      event.preventDefault();
+      commitText();
+      return;
+    }
+    if (event.key === 'Backspace') {
+      event.preventDefault();
+      editing.content = editing.content.slice(0, -1);
+      redrawOverlay();
+      return;
+    }
+    if (event.key.length === 1) {
+      event.preventDefault();
+      editing.content += event.key;
+      redrawOverlay();
+      return;
+    }
+    return;
+  }
 
   if (ctrl && event.key.toLowerCase() === 'z') {
     if (typing) {
@@ -1422,6 +1774,13 @@ function render(): void {
   if (document.activeElement !== fillToleranceInput) {
     fillToleranceInput.value = String(store.fillTolerance);
   }
+  if (document.activeElement !== textSizeInput) {
+    textSizeInput.value = String(store.textSize);
+  }
+  textFontSelect.value = store.textFont;
+  textBoldCheckbox.checked = store.textBold;
+  textItalicCheckbox.checked = store.textItalic;
+  textSwatch.style.background = `rgb(${store.foreground.r}, ${store.foreground.g}, ${store.foreground.b})`;
   renderPaletteStrip();
   if (document.activeElement !== resizeWidthInput && store.width > 0) {
     resizeWidthInput.value = String(store.width);
@@ -1439,14 +1798,17 @@ function render(): void {
   const showWand = tool === 'wand';
   const showZoom = tool === 'zoom';
   const showResize = tool === 'resize';
-  const showPalette = tool === 'brush' || tool === 'bucket';
+  const showText = tool === 'text';
+  const showPalette = tool === 'brush' || tool === 'bucket' || tool === 'text';
   brushSection.style.display = showBrush ? 'flex' : 'none';
   bucketSection.style.display = showBucket ? 'flex' : 'none';
   wandSection.style.display = showWand ? 'flex' : 'none';
   zoomSection.style.display = showZoom ? 'flex' : 'none';
   resizeSection.style.display = showResize ? 'flex' : 'none';
+  textSection.style.display = showText ? 'flex' : 'none';
   paletteSection.style.display = showPalette ? 'flex' : 'none';
-  hintSection.style.display = showBrush || showBucket || showWand || showZoom || showResize ? 'none' : 'flex';
+  hintSection.style.display =
+    showBrush || showBucket || showWand || showZoom || showResize || showText ? 'none' : 'flex';
   hintLabel.textContent =
     tool === 'move'
       ? 'Move: drag selection to move · handles to scale · just outside corners to rotate'

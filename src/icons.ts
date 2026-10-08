@@ -19,12 +19,13 @@ const ICONS: Record<ToolId, string> = {
     '<path d="M6 11 12 5l7 7-6 6a2 2 0 0 1-3 0l-4-4a2 2 0 0 1 0-3z"/><path d="M9 8 7.5 6.5a2 2 0 0 1 0-3"/><path d="M19 14c1.5 2 2 3.2 2 4a2 2 0 1 1-4 0c0-.8.5-2 2-4z"/>',
   ),
   lasso: WRAP(
-    '<path d="M12 5c4.4 0 8 2.2 8 5s-3.6 5-8 5c-1.2 0-2.4-.2-3.4-.5"/><path d="M8.6 14.5C6 13.6 4 11.9 4 10c0-1.5 1-2.8 2.7-3.8"/><path d="M8 15.5c-1.2 1-1 3.2.2 3.2 1 0 1.4-2 .3-3.1"/>',
+    '<path d="M12 5c4.4 0 8 2.2 8 5s-3.6 5-8 5c-1.2 0-2.4-.2-3.4-.5"/><path d="M8.6 14.5C6 13.6 4 11.9 4 10c0-1.5 1-2.8 2.7-3.8"/><path d="M8 15.5c-1.2 1-1 4.4.2 4.4 1 0 1.4-2 .3-4.3"/>',
   ),
   wand: WRAP('<path d="M4 20 15 9"/><path d="M14 8l3-3"/><path d="M17 3v4M15 5h4M19 10v3M17.5 11.5h3M6 4v3M4.5 5.5h3"/>'),
   marquee: WRAP('<rect x="4" y="4" width="16" height="16" rx="1" stroke-dasharray="3 3"/>'),
   eyedropper: WRAP('<path d="M18.5 3.5a2.1 2.1 0 0 1 3 3l-2.2 2.2 1 1-2 2-1-1L8 20l-4 1 1-4 9.3-9.3-1-1 2-2 1 1z"/>'),
-  resize: WRAP('<rect x="3" y="3" width="9" height="9" rx="1"/><path d="M13 21h8v-8"/><path d="M21 21 14 14"/><path d="M17 14h4v4"/>'),
+  text: WRAP('<path d="M5 6V4h14v2"/><path d="M12 4v16"/><path d="M9 20h6"/>'),
+  resize: WRAP('<path d="M15 3h6v6"/><path d="M9 21H3v-6"/><path d="M21 3l-7 7"/><path d="M3 21l7-7"/>'),
 };
 
 export function toolIcon(id: ToolId): string {

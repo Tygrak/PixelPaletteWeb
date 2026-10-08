@@ -5,6 +5,46 @@ import { createEmptyImage } from './image';
 
 export type Selection = Uint8Array;
 
+export type SelectionMode = 'replace' | 'add' | 'subtract';
+
+// Combines a new selection region with the existing one. Returns null when the
+// result selects nothing.
+export function combineSelection(
+  base: Selection | null,
+  addition: Selection,
+  mode: SelectionMode,
+): Selection | null {
+  const length = addition.length;
+  const result = new Uint8Array(length);
+  let count = 0;
+  if (mode === 'replace') {
+    for (let i = 0; i < length; i++) {
+      if (addition[i]) {
+        result[i] = 1;
+        count++;
+      }
+    }
+  } else if (mode === 'add') {
+    for (let i = 0; i < length; i++) {
+      if ((base && base[i]) || addition[i]) {
+        result[i] = 1;
+        count++;
+      }
+    }
+  } else {
+    if (!base) {
+      return null;
+    }
+    for (let i = 0; i < length; i++) {
+      if (base[i] && !addition[i]) {
+        result[i] = 1;
+        count++;
+      }
+    }
+  }
+  return count > 0 ? result : null;
+}
+
 export function rectSelection(
   width: number,
   height: number,
@@ -103,7 +143,8 @@ export function wandSelection(
   return mask;
 }
 
-// Builds a transparent overlay image with a 1px boundary around the selection.
+// Builds a transparent overlay image with a black/white checkerboard border
+// around the selection (marching-ants style, visible on any background).
 export function selectionOverlay(mask: Selection, width: number, height: number): ImageData {
   const overlay = createEmptyImage(width, height);
   for (let y = 0; y < height; y++) {
@@ -123,10 +164,12 @@ export function selectionOverlay(mask: Selection, width: number, height: number)
         !mask[index + width];
       if (boundary) {
         const pos = index * 4;
-        overlay.data[pos] = 255;
-        overlay.data[pos + 1] = 255;
-        overlay.data[pos + 2] = 255;
-        overlay.data[pos + 3] = 230;
+        const dark = ((Math.floor(x / 3) + Math.floor(y / 3)) & 1) === 0;
+        const value = dark ? 0 : 255;
+        overlay.data[pos] = value;
+        overlay.data[pos + 1] = value;
+        overlay.data[pos + 2] = value;
+        overlay.data[pos + 3] = 255;
       }
     }
   }

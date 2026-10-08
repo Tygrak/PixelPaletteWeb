@@ -14,6 +14,7 @@ export type ToolId =
   | 'wand'
   | 'marquee'
   | 'eyedropper'
+  | 'text'
   | 'resize';
 
 export interface ToolInfo {
@@ -33,6 +34,7 @@ export const TOOLS: ToolInfo[] = [
   { id: 'wand', label: 'Wand', shortcut: 'W' },
   { id: 'marquee', label: 'Marquee', shortcut: 'M' },
   { id: 'eyedropper', label: 'Eyedropper', shortcut: 'I' },
+  { id: 'text', label: 'Text', shortcut: 'T' },
   { id: 'resize', label: 'Resize Image', shortcut: 'R' },
 ];
 

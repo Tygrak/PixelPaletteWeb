@@ -33,6 +33,7 @@ npm run preview  # serve the production build
 | Quick Selection / Wand   | `W` |
 | Marquee Selection        | `M` |
 | Eyedropper               | `I` |
+| Text Tool                | `T` |
 | Resize Image             | `R` |
 
 ## Editing & Navigation (requirements)
@@ -49,7 +50,7 @@ npm run preview  # serve the production build
 | Action        | Shortcut          |
 | ------------- | ----------------- |
 | New Layer     | `Shift + Ctrl + N` |
-| Merge Layers  | `Ctrl + E`         |
+| Merge Down    | `Ctrl + E`         |
 
 ## Tablet / Pen support (requirements)
 
@@ -119,13 +120,26 @@ Each tool has an icon in the tool strip and a shortcut.
   (adjustable tolerance, constrained by the active selection).
 - **Lasso** – free-form polygonal selection.
 - **Wand** – contiguous magic-wand selection with an adjustable tolerance.
-- **Marquee** – rectangular selection.
+- **Marquee** – rectangular selection. A plain click (no drag) clears the
+  selection.
 - **Eyedropper** – sample a color from the image into the brush foreground.
-- **Resize Image** – resize the whole document (all layers) from the options
-  bar, with an optional locked aspect ratio.
+- **Text** – click on the canvas and type directly; the text appears in place
+  at the chosen size/font/color. Backspace deletes, `Enter` locks it in, `Esc`
+  cancels. Options: size, font (Sans/Serif/Mono/Cursive/Fantasy), bold, italic
+  and color.
+- **Resize Image** – a transform box around the canvas; drag its edges/corners
+  to grow or shrink the document. By default this adds/removes empty canvas
+  filled with the neighboring (edge) color; tick **Scale** to stretch the image
+  content to the new size instead. Width/height and an optional locked ratio are
+  also editable in the options bar.
 
 Brush size can also be changed with `[` and `]`. Selections constrain the
 brush and eraser to the selected region. `Esc` clears the selection.
+
+The selection is outlined with a black/white checkerboard border so it is
+visible on any image. For the **Marquee**, **Lasso** and **Wand** tools, hold
+`Shift` to add to the current selection or `Alt` to subtract from it (no
+modifier replaces it).
 
 When the **Brush** or **Paint Bucket** tool is active, the options bar shows the
 current palette as a row of swatches; click a swatch to make it the active
@@ -136,7 +150,9 @@ an eyedropper to sample a color from the image.
 
 - Docked **Layers** panel: list of layers with per-layer visibility toggles and
   an active-layer highlight.
-- New Layer (`Shift + Ctrl + N`), Merge Layers (`Ctrl + E`), Delete Layer.
+- Double-click a layer to rename it; drag a layer to reorder the stack.
+- New Layer (`Shift + Ctrl + N`), Merge Down (`Ctrl + E`, merges the active
+  layer into the one below), Delete Layer.
 - Layers are alpha-composited (source-over) for display, saving, and all
   processing operations.
 
