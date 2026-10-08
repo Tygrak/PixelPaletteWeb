@@ -97,16 +97,33 @@ body {
   background: var(--bg-control);
 }
 
-.main-canvas {
+.canvas-stack {
+  position: relative;
   display: none;
   flex: 0 0 auto;
-  image-rendering: pixelated;
+  line-height: 0;
+  cursor: crosshair;
   will-change: transform;
 }
 
-.main-canvas.visible {
+.canvas-stack.visible {
   display: block;
-  cursor: crosshair;
+}
+
+.main-canvas {
+  display: block;
+  width: 100%;
+  height: 100%;
+  image-rendering: pixelated;
+}
+
+.overlay-canvas {
+  position: absolute;
+  inset: 0;
+  width: 100%;
+  height: 100%;
+  image-rendering: pixelated;
+  pointer-events: none;
 }
 
 .placeholder {
@@ -469,4 +486,124 @@ input[type='checkbox'] {
 
 .inline input[type='number'] {
   width: 64px;
+}
+
+/* --- Tool strip --- */
+.tools-column {
+  display: flex;
+  flex-direction: column;
+  gap: 2px;
+  width: 44px;
+  padding: 2px;
+  background: var(--bg-panel);
+  border-right: 2px solid #000;
+}
+
+.tool-btn {
+  height: 40px;
+  font-weight: 600;
+}
+
+.tool-btn.active {
+  background: #7d8785;
+  outline: 1px solid #000;
+}
+
+/* --- Options bar --- */
+.options-bar {
+  display: flex;
+  align-items: center;
+  gap: 18px;
+  height: 40px;
+  padding: 0 10px;
+  background: var(--bg-darkest);
+  border-bottom: 2px solid #000;
+}
+
+.options-section {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+}
+
+.palette-swatch.small {
+  width: 24px;
+  height: 16px;
+}
+
+/* --- Layers --- */
+.layer-list {
+  display: flex;
+  flex-direction: column;
+  gap: 2px;
+  max-height: 320px;
+  overflow: auto;
+  background: var(--bg-control);
+  border: 1px solid var(--border);
+  border-radius: 3px;
+  padding: 2px;
+}
+
+.layer-item {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  padding: 5px 8px;
+  cursor: pointer;
+  border-radius: 3px;
+}
+
+.layer-item:hover {
+  background: var(--bg-item-hover);
+}
+
+.layer-item.active {
+  background: var(--bg-control-hover);
+  outline: 1px solid #000;
+}
+
+.layer-name {
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+
+.tool-btn svg {
+  width: 20px;
+  height: 20px;
+  display: block;
+  margin: 0 auto;
+}
+
+/* --- Palette strip (brush / bucket) --- */
+.palette-section {
+  flex: 1 1 auto;
+  min-width: 0;
+}
+
+.palette-strip {
+  display: flex;
+  gap: 3px;
+  padding: 2px;
+  overflow-x: auto;
+  max-width: 100%;
+}
+
+.palette-dot {
+  flex: 0 0 auto;
+  width: 22px;
+  height: 22px;
+  padding: 0;
+  border: 1px solid #000;
+  border-radius: 3px;
+  cursor: pointer;
+}
+
+.palette-dot:hover {
+  border-color: #fff;
+}
+
+.palette-dot.active {
+  outline: 2px solid #fff;
+  outline-offset: 1px;
 }

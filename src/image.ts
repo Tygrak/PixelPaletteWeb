@@ -57,6 +57,32 @@ export function cloneImage(img: ImageData): ImageData {
   return result;
 }
 
+// Places a source image in the center of a (width x height) transparent image.
+export function placeImageCentered(width: number, height: number, source: ImageData): ImageData {
+  const out = createEmptyImage(width, height);
+  const offsetX = Math.floor((width - source.width) / 2);
+  const offsetY = Math.floor((height - source.height) / 2);
+  for (let y = 0; y < source.height; y++) {
+    const destY = y + offsetY;
+    if (destY < 0 || destY >= height) {
+      continue;
+    }
+    for (let x = 0; x < source.width; x++) {
+      const destX = x + offsetX;
+      if (destX < 0 || destX >= width) {
+        continue;
+      }
+      const sourcePos = (x + y * source.width) * 4;
+      const destPos = (destX + destY * width) * 4;
+      out.data[destPos] = source.data[sourcePos];
+      out.data[destPos + 1] = source.data[sourcePos + 1];
+      out.data[destPos + 2] = source.data[sourcePos + 2];
+      out.data[destPos + 3] = source.data[sourcePos + 3];
+    }
+  }
+  return out;
+}
+
 export function calculateAverageError(a: ImageData, b: ImageData): number {
   const aColors = colorArrayFromImage(a);
   const bColors = colorArrayFromImage(b);

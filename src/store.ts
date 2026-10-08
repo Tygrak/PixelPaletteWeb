@@ -1,20 +1,44 @@
 import { rgb, RGB } from './color';
+import { cloneImage, placeImageCentered, resizeImage } from './image';
+import { cloneLayer, compositeLayers, copyLayer, createLayer, Layer } from './layers';
+import { Selection } from './selection';
+import { ToolId } from './tools';
+
+interface Snapshot {
+  layers: Layer[];
+  activeIndex: number;
+}
 
 type Listener = () => void;
 
-// Mirrors the state held by MainWindow + PaletteWindow in the original app.
+// Central editor state: layers, history, tools and selection.
 export class Store {
-  initial: ImageData | null = null;
-  current: ImageData | null = null;
+  layers: Layer[] = [];
+  activeIndex = 0;
+  width = 0;
+  height = 0;
 
-  private undoStack: ImageData[] = [];
-  private redoStack: ImageData[] = [];
+  initial: ImageData | null = null;
 
   palette: RGB[] = [rgb(0, 0, 0), rgb(255, 255, 255)];
 
+  activeTool: ToolId = 'hand';
+  foreground: RGB = rgb(0, 0, 0);
+  brushSize = 24;
+  brushOpacity = 1;
+  softBrush = false;
+  wandTolerance = 32;
+  fillTolerance = 32;
+
+  selection: Selection | null = null;
+
   working = false;
   status = '';
+  revision = 0;
 
+  private undoStack: Snapshot[] = [];
+  private redoStack: Snapshot[] = [];
+  private compositeCache: ImageData | null = null;
   private listeners: Listener[] = [];
 
   onChange(listener: Listener): () => void {
@@ -33,6 +57,34 @@ export class Store {
     }
   }
 
+  private invalidate(): void {
+    this.compositeCache = null;
+  }
+
+  // Marks the document as changed (image content / layers).
+  notify(): void {
+    this.invalidate();
+    this.revision++;
+    this.emit();
+  }
+
+  get activeLayer(): Layer | null {
+    return this.layers[this.activeIndex] ?? null;
+  }
+
+  // The flattened document that is displayed and processed.
+  get current(): ImageData | null {
+    if (this.layers.length === 0) {
+      return null;
+    }
+    if (this.compositeCache === null) {
+      this.compositeCache = compositeLayers(this.layers, this.width, this.height);
+    }
+    return this.compositeCache;
+  }
+
+  // --- History ---
+
   canUndo(): boolean {
     return this.undoStack.length > 0;
   }
@@ -41,54 +93,231 @@ export class Store {
     return this.redoStack.length > 0;
   }
 
-  openImage(img: ImageData): void {
-    this.initial = img;
-    this.current = img;
-    this.undoStack = [];
-    this.redoStack = [];
-    this.emit();
+  private snapshot(): Snapshot {
+    return { layers: this.layers.map(copyLayer), activeIndex: this.activeIndex };
   }
 
-  changeMainImage(img: ImageData): void {
-    if (this.current !== null) {
-      if (this.undoStack.length > 15) {
-        this.undoStack.shift();
-      }
-      this.undoStack.push(this.current);
+  private applySnapshot(snapshot: Snapshot): void {
+    this.layers = snapshot.layers.map(copyLayer);
+    this.activeIndex = snapshot.activeIndex;
+    this.selection = null;
+  }
+
+  pushHistory(): void {
+    if (this.layers.length === 0) {
+      return;
+    }
+    this.undoStack.push(this.snapshot());
+    if (this.undoStack.length > 15) {
+      this.undoStack.shift();
     }
     this.redoStack = [];
-    this.current = img;
-    this.emit();
   }
 
   undo(): void {
-    const last = this.undoStack.pop();
-    if (!last) {
+    const snapshot = this.undoStack.pop();
+    if (!snapshot) {
       return;
     }
-    if (this.current !== null) {
-      this.redoStack.push(this.current);
-    }
-    this.current = last;
-    this.emit();
+    this.redoStack.push(this.snapshot());
+    this.applySnapshot(snapshot);
+    this.notify();
   }
 
   redo(): void {
-    const last = this.redoStack.pop();
-    if (!last) {
+    const snapshot = this.redoStack.pop();
+    if (!snapshot) {
       return;
     }
-    if (this.current !== null) {
-      this.undoStack.push(this.current);
+    this.undoStack.push(this.snapshot());
+    this.applySnapshot(snapshot);
+    this.notify();
+  }
+
+  // --- Document lifecycle ---
+
+  openImage(img: ImageData): void {
+    this.width = img.width;
+    this.height = img.height;
+    this.initial = img;
+    this.layers = [createLayer(img.width, img.height, 'Background', cloneImage(img))];
+    this.activeIndex = 0;
+    this.undoStack = [];
+    this.redoStack = [];
+    this.selection = null;
+    this.notify();
+  }
+
+  // Used by the processing panels: replaces the active layer's content.
+  changeMainImage(img: ImageData): void {
+    const layer = this.activeLayer;
+    if (!layer) {
+      return;
     }
-    this.current = last;
-    this.emit();
+    this.pushHistory();
+    this.layers[this.activeIndex] = { ...layer, image: img };
+    this.notify();
+  }
+
+  // Prepares the active layer for in-place painting: records history and
+  // clones the image so the recorded state stays intact.
+  beginPaint(): ImageData | null {
+    const layer = this.activeLayer;
+    if (!layer) {
+      return null;
+    }
+    this.pushHistory();
+    const painted = { ...layer, image: cloneImage(layer.image) };
+    this.layers[this.activeIndex] = painted;
+    this.invalidate();
+    return painted.image;
+  }
+
+  // Adds a pasted image as a new layer (centered on the document).
+  addImageLayer(source: ImageData): void {
+    if (this.width === 0 || this.height === 0) {
+      this.openImage(source);
+      return;
+    }
+    this.pushHistory();
+    const placed = placeImageCentered(this.width, this.height, source);
+    const layer = createLayer(this.width, this.height, 'Pasted', placed);
+    this.layers.splice(this.activeIndex + 1, 0, layer);
+    this.activeIndex += 1;
+    this.notify();
+  }
+
+  // Resizes the whole document (every layer) to the given dimensions.
+  resizeDocument(width: number, height: number): void {
+    if (width < 1 || height < 1 || this.layers.length === 0) {
+      return;
+    }
+    this.pushHistory();
+    const scaleX = width / this.width;
+    const scaleY = height / this.height;
+    this.layers = this.layers.map((layer) => ({
+      ...layer,
+      image: resizeImage(layer.image, width, height),
+      offsetX: Math.round(layer.offsetX * scaleX),
+      offsetY: Math.round(layer.offsetY * scaleY),
+    }));
+    this.width = width;
+    this.height = height;
+    this.selection = null;
+    this.notify();
   }
 
   restore(): void {
-    if (this.current !== null && this.initial !== null && this.current !== this.initial) {
-      this.changeMainImage(this.initial);
+    if (!this.initial) {
+      return;
     }
+    this.pushHistory();
+    this.width = this.initial.width;
+    this.height = this.initial.height;
+    this.layers = [createLayer(this.width, this.height, 'Background', cloneImage(this.initial))];
+    this.activeIndex = 0;
+    this.selection = null;
+    this.notify();
+  }
+
+  // --- Layers ---
+
+  addLayer(): void {
+    if (this.width === 0 || this.height === 0) {
+      return;
+    }
+    this.pushHistory();
+    const layer = createLayer(this.width, this.height, `Layer ${this.layers.length + 1}`);
+    this.layers.splice(this.activeIndex + 1, 0, layer);
+    this.activeIndex += 1;
+    this.notify();
+  }
+
+  mergeLayers(): void {
+    if (this.layers.length < 2) {
+      return;
+    }
+    this.pushHistory();
+    const merged = compositeLayers(this.layers, this.width, this.height);
+    const layer = createLayer(this.width, this.height, 'Merged', merged);
+    this.layers = [layer];
+    this.activeIndex = 0;
+    this.selection = null;
+    this.notify();
+  }
+
+  deleteLayer(): void {
+    if (this.layers.length < 2) {
+      return;
+    }
+    this.pushHistory();
+    this.layers.splice(this.activeIndex, 1);
+    this.activeIndex = Math.min(this.activeIndex, this.layers.length - 1);
+    this.notify();
+  }
+
+  setActiveLayer(index: number): void {
+    if (index < 0 || index >= this.layers.length) {
+      return;
+    }
+    this.activeIndex = index;
+    this.emit();
+  }
+
+  setLayerVisible(index: number, visible: boolean): void {
+    const layer = this.layers[index];
+    if (!layer) {
+      return;
+    }
+    this.layers[index] = { ...layer, visible };
+    this.notify();
+  }
+
+  // --- Tool state ---
+
+  setActiveTool(tool: ToolId): void {
+    this.activeTool = tool;
+    this.emit();
+  }
+
+  setForeground(color: RGB): void {
+    this.foreground = color;
+    this.emit();
+  }
+
+  setBrushSize(size: number): void {
+    this.brushSize = size;
+    this.emit();
+  }
+
+  setBrushOpacity(opacity: number): void {
+    this.brushOpacity = opacity;
+    this.emit();
+  }
+
+  setSoftBrush(soft: boolean): void {
+    this.softBrush = soft;
+    this.emit();
+  }
+
+  setWandTolerance(tolerance: number): void {
+    this.wandTolerance = tolerance;
+    this.emit();
+  }
+
+  setFillTolerance(tolerance: number): void {
+    this.fillTolerance = tolerance;
+    this.emit();
+  }
+
+  setSelection(mask: Selection | null): void {
+    this.selection = mask;
+    this.emit();
+  }
+
+  clearSelection(): void {
+    this.selection = null;
+    this.emit();
   }
 
   setStatus(status: string): void {

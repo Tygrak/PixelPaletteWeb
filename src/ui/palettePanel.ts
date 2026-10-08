@@ -30,6 +30,7 @@ export function openPalettePanel(ctx: AppContext, onClose?: () => void): DockPan
       });
       list.append(item);
     });
+    store.emit();
   };
   renderList();
 
