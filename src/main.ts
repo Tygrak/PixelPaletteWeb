@@ -34,7 +34,7 @@ import {
 } from './selection';
 import { Store } from './store';
 import { drawText } from './text';
-import { cloneStamp, floodFill, healStamp, paintStroke, pencilOffsets, stampBrush, ToolId, toolForShortcut, TOOLS } from './tools';
+import { cloneStamp, floodFill, healStamp, knifeStamp, paintStroke, pencilOffsets, stampBrush, ToolId, toolForShortcut, TOOLS } from './tools';
 import { openAdjustmentsPanel } from './ui/adjustmentsPanel';
 import { openDitherPanel } from './ui/ditherPanel';
 import { openEffectsPanel } from './ui/effectsPanel';
@@ -648,6 +648,30 @@ const brushSection = h('div', { class: 'options-section' }, [
   pickForegroundButton,
 ]);
 
+// Palette knife controls edit the same size/opacity/soft state as the brush,
+// but live in their own inputs so they can be shown independently.
+const knifeSizeInput = numberInput(store.brushSize, 1, 500, 1, () => store.setBrushSize(readNumber(knifeSizeInput)));
+const knifeStrengthInput = numberInput(Math.round(store.brushOpacity * 100), 0, 100, 1, () =>
+  store.setBrushOpacity(clamp(readNumber(knifeStrengthInput) / 100, 0, 1)),
+);
+const knifeSoftCheckbox = document.createElement('input');
+knifeSoftCheckbox.type = 'checkbox';
+knifeSoftCheckbox.checked = store.softBrush;
+knifeSoftCheckbox.addEventListener('change', () => store.setSoftBrush(knifeSoftCheckbox.checked));
+const knifeSmearInput = numberInput(Math.round(store.knifeSmear * 100), 0, 100, 1, () =>
+  store.setKnifeSmear(clamp(readNumber(knifeSmearInput) / 100, 0, 1)),
+);
+const knifeSection = h('div', { class: 'options-section' }, [
+  h('span', { class: 'row-label', text: 'Size' }),
+  knifeSizeInput,
+  h('span', { class: 'row-label', text: 'Strength' }),
+  knifeStrengthInput,
+  h('span', { class: 'row-label', text: 'Smear' }),
+  knifeSmearInput,
+  h('span', { class: 'row-label', text: 'Soft' }),
+  knifeSoftCheckbox,
+]);
+
 const wandToleranceInput = numberInput(store.wandTolerance, 0, 255, 1, () =>
   store.setWandTolerance(readNumber(wandToleranceInput)),
 );
@@ -812,6 +836,7 @@ const textSection = h('div', { class: 'options-section' }, [
 
 const optionsBar = h('div', { class: 'options-bar' }, [
   brushSection,
+  knifeSection,
   bucketSection,
   wandSection,
   zoomSection,
@@ -1101,7 +1126,7 @@ function redrawOverlay(): void {
     }
   }
   if (hoverPoint && store.current && isBrushTool(store.activeTool)) {
-    if (store.pencilBrush) {
+    if (store.pencilBrush && store.activeTool !== 'knife') {
       // Show the exact pixels the pencil will paint.
       const cx = Math.floor(hoverPoint.x);
       const cy = Math.floor(hoverPoint.y);
@@ -1138,7 +1163,7 @@ let spaceHeld = false;
 
 let strokeImage: ImageData | null = null;
 let strokeSource: ImageData | null = null;
-let strokeKind: 'brush' | 'eraser' | 'clone' | 'heal' = 'brush';
+let strokeKind: 'brush' | 'eraser' | 'clone' | 'heal' | 'knife' = 'brush';
 let strokeLastX = 0;
 let strokeLastY = 0;
 
@@ -1147,7 +1172,7 @@ let cloneSource: { x: number; y: number } | null = null;
 let cloneOffset: { x: number; y: number } | null = null;
 
 function isBrushTool(tool: ToolId): boolean {
-  return tool === 'brush' || tool === 'eraser' || tool === 'clone' || tool === 'heal';
+  return tool === 'brush' || tool === 'eraser' || tool === 'clone' || tool === 'heal' || tool === 'knife';
 }
 
 let selecting: {
@@ -1355,6 +1380,19 @@ canvas.addEventListener('pointerdown', (event) => {
       }
       strokeKind = 'heal';
       strokeSource = source;
+      strokeImage = image;
+      strokeLastX = point.x;
+      strokeLastY = point.y;
+      paintStrokeSegment(point.x, point.y, point.x, point.y, pointerPressure(event));
+      break;
+    }
+    case 'knife': {
+      const image = store.beginPaint();
+      if (!image) {
+        break;
+      }
+      strokeKind = 'knife';
+      strokeSource = null;
       strokeImage = image;
       strokeLastX = point.x;
       strokeLastY = point.y;
@@ -1754,6 +1792,30 @@ function paintStrokeSegment(
       layerOffsetY: offsetY,
     };
     forEachStamp(fromX, fromY, toX, toY, radius, (x, y) => healStamp(strokeImage!, strokeSource!, x, y, params));
+  } else if (strokeKind === 'knife') {
+    let dirX = toX - fromX;
+    let dirY = toY - fromY;
+    const length = Math.hypot(dirX, dirY);
+    if (length > 1e-6) {
+      dirX /= length;
+      dirY /= length;
+    } else {
+      dirX = 0;
+      dirY = 0;
+    }
+    const params = {
+      radius,
+      strength: alpha,
+      smear: store.knifeSmear,
+      soft: store.softBrush,
+      pencil: false,
+      selection: store.selection,
+      layerOffsetX: offsetX,
+      layerOffsetY: offsetY,
+      dirX,
+      dirY,
+    };
+    forEachStamp(fromX, fromY, toX, toY, radius, (x, y) => knifeStamp(strokeImage!, x, y, params));
   } else {
     const params = {
       radius,
@@ -2095,9 +2157,20 @@ function render(): void {
   brushSwatch.style.background = `rgb(${store.foreground.r}, ${store.foreground.g}, ${store.foreground.b})`;
   softBrushCheckbox.checked = store.softBrush;
   pencilCheckbox.checked = store.pencilBrush;
+  if (document.activeElement !== knifeSizeInput) {
+    knifeSizeInput.value = String(store.brushSize);
+  }
+  if (document.activeElement !== knifeStrengthInput) {
+    knifeStrengthInput.value = String(Math.round(store.brushOpacity * 100));
+  }
+  if (document.activeElement !== knifeSmearInput) {
+    knifeSmearInput.value = String(Math.round(store.knifeSmear * 100));
+  }
+  knifeSoftCheckbox.checked = store.softBrush;
 
   const tool = store.activeTool;
-  const showBrush = isBrushTool(tool);
+  const showKnife = tool === 'knife';
+  const showBrush = isBrushTool(tool) && !showKnife;
   const showBucket = tool === 'bucket';
   const showWand = tool === 'wand';
   const showZoom = tool === 'zoom';
@@ -2105,6 +2178,7 @@ function render(): void {
   const showText = tool === 'text';
   const showPalette = tool === 'brush' || tool === 'bucket' || tool === 'text';
   brushSection.style.display = showBrush ? 'flex' : 'none';
+  knifeSection.style.display = showKnife ? 'flex' : 'none';
   bucketSection.style.display = showBucket ? 'flex' : 'none';
   wandSection.style.display = showWand ? 'flex' : 'none';
   zoomSection.style.display = showZoom ? 'flex' : 'none';
@@ -2112,7 +2186,7 @@ function render(): void {
   textSection.style.display = showText ? 'flex' : 'none';
   paletteSection.style.display = showPalette ? 'flex' : 'none';
   hintSection.style.display =
-    showBrush || showBucket || showWand || showZoom || showResize || showText ? 'none' : 'flex';
+    showBrush || showKnife || showBucket || showWand || showZoom || showResize || showText ? 'none' : 'flex';
   hintLabel.textContent =
     tool === 'move'
       ? 'Move: drag selection to move · handles to scale · just outside corners to rotate'

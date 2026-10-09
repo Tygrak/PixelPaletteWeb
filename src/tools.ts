@@ -11,6 +11,7 @@ export type ToolId =
   | 'eraser'
   | 'clone'
   | 'heal'
+  | 'knife'
   | 'bucket'
   | 'lasso'
   | 'wand'
@@ -33,6 +34,7 @@ export const TOOLS: ToolInfo[] = [
   { id: 'eraser', label: 'Eraser', shortcut: 'E' },
   { id: 'clone', label: 'Clone Stamp', shortcut: 'S' },
   { id: 'heal', label: 'Spot Healing Brush', shortcut: 'J' },
+  { id: 'knife', label: 'Palette Knife', shortcut: 'K' },
   { id: 'bucket', label: 'Paint Bucket', shortcut: 'G' },
   { id: 'lasso', label: 'Lasso', shortcut: 'L' },
   { id: 'wand', label: 'Wand', shortcut: 'W' },
@@ -384,6 +386,116 @@ export function healStamp(
       targetData[pos + 3] = Math.round(outAlpha * 255);
     }
   }
+}
+
+export interface KnifeParams {
+  radius: number;
+  // How strongly each stamp lays the picked-up paint back down (0-1).
+  strength: number;
+  // How far behind the cursor to sample the dragged paint, as a fraction of
+  // the radius. Larger values smear further along the stroke.
+  smear: number;
+  soft: boolean;
+  pencil: boolean;
+  selection: Selection | null;
+  layerOffsetX: number;
+  layerOffsetY: number;
+  // Unit drag direction in document space.
+  dirX: number;
+  dirY: number;
+}
+
+// Palette knife: samples paint slightly behind the cursor (opposite the drag
+// direction) and smears it back into the brush area, carrying both color and
+// alpha along like a wet blade. Sampling the live target lets successive
+// stamps chain, so color genuinely drags and blends down the stroke instead of
+// repeating the original snapshot.
+export function knifeStamp(target: ImageData, centerX: number, centerY: number, params: KnifeParams): void {
+  const { width, height, data } = target;
+  const radius = Math.max(0.5, params.radius);
+  const strength = clamp01(params.strength);
+  const { layerOffsetX, layerOffsetY, selection, dirX, dirY } = params;
+  const reach = radius * 0.6 * params.smear;
+  // Paint moves in the stroke direction, so the sampled source sits behind it.
+  const baseX = -dirX * reach;
+  const baseY = -dirY * reach;
+  // A little perpendicular spread softens the streak into a smear.
+  const perpX = -dirY;
+  const perpY = dirX;
+  const spread = radius * 0.2;
+
+  const minX = Math.max(0, Math.floor(centerX - radius - 1));
+  const maxX = Math.min(width - 1, Math.ceil(centerX + radius + 1));
+  const minY = Math.max(0, Math.floor(centerY - radius - 1));
+  const maxY = Math.min(height - 1, Math.ceil(centerY + radius + 1));
+
+  for (let docY = minY; docY <= maxY; docY++) {
+    const layerY = docY - layerOffsetY;
+    if (layerY < 0 || layerY >= height) {
+      continue;
+    }
+    for (let docX = minX; docX <= maxX; docX++) {
+      const layerX = docX - layerOffsetX;
+      if (layerX < 0 || layerX >= width) {
+        continue;
+      }
+      const docIndex = docX + docY * width;
+      if (selection && !selection[docIndex]) {
+        continue;
+      }
+      const coverage = coverageAt(docX, docY, centerX, centerY, radius, params.soft, params.pencil);
+      if (coverage <= 0) {
+        continue;
+      }
+
+      let sumR = 0;
+      let sumG = 0;
+      let sumB = 0;
+      let sumA = 0;
+      let samples = 0;
+      for (let tap = -1; tap <= 1; tap++) {
+        const sampleX = Math.round(layerX + baseX + perpX * spread * tap);
+        const sampleY = Math.round(layerY + baseY + perpY * spread * tap);
+        if (sampleX < 0 || sampleX >= width || sampleY < 0 || sampleY >= height) {
+          continue;
+        }
+        const samplePos = (sampleX + sampleY * width) * 4;
+        sumR += data[samplePos];
+        sumG += data[samplePos + 1];
+        sumB += data[samplePos + 2];
+        sumA += data[samplePos + 3];
+        samples++;
+      }
+      if (samples === 0) {
+        continue;
+      }
+
+      const sourceAlpha = ((sumA / samples) / 255) * coverage * strength;
+      if (sourceAlpha <= 0) {
+        continue;
+      }
+      const pos = (layerX + layerY * width) * 4;
+      const destAlpha = data[pos + 3] / 255;
+      const outAlpha = sourceAlpha + destAlpha * (1 - sourceAlpha);
+      if (outAlpha <= 0) {
+        continue;
+      }
+      const srcR = sumR / samples;
+      const srcG = sumG / samples;
+      const srcB = sumB / samples;
+      data[pos] = Math.round((srcR * sourceAlpha + data[pos] * destAlpha * (1 - sourceAlpha)) / outAlpha);
+      data[pos + 1] = Math.round((srcG * sourceAlpha + data[pos + 1] * destAlpha * (1 - sourceAlpha)) / outAlpha);
+      data[pos + 2] = Math.round((srcB * sourceAlpha + data[pos + 2] * destAlpha * (1 - sourceAlpha)) / outAlpha);
+      data[pos + 3] = Math.round(outAlpha * 255);
+    }
+  }
+}
+
+function clamp01(value: number): number {
+  if (value < 0) {
+    return 0;
+  }
+  return value > 1 ? 1 : value;
 }
 
 // Scanline flood fill from a document-space seed position, constrained by the

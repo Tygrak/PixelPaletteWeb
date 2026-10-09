@@ -8,6 +8,8 @@ import { ToolId } from './tools';
 interface Snapshot {
   layers: Layer[];
   activeIndex: number;
+  width: number;
+  height: number;
 }
 
 type Listener = () => void;
@@ -31,6 +33,7 @@ export class Store {
   brushOpacity = 1;
   softBrush = false;
   pencilBrush = false;
+  knifeSmear = 0.6;
   wandTolerance = 32;
   fillTolerance = 32;
 
@@ -103,12 +106,19 @@ export class Store {
   }
 
   private snapshot(): Snapshot {
-    return { layers: this.layers.map(copyLayer), activeIndex: this.activeIndex };
+    return {
+      layers: this.layers.map(copyLayer),
+      activeIndex: this.activeIndex,
+      width: this.width,
+      height: this.height,
+    };
   }
 
   private applySnapshot(snapshot: Snapshot): void {
     this.layers = snapshot.layers.map(copyLayer);
     this.activeIndex = snapshot.activeIndex;
+    this.width = snapshot.width;
+    this.height = snapshot.height;
     this.selection = null;
   }
 
@@ -382,6 +392,11 @@ export class Store {
 
   setPencilBrush(pencil: boolean): void {
     this.pencilBrush = pencil;
+    this.emit();
+  }
+
+  setKnifeSmear(smear: number): void {
+    this.knifeSmear = smear;
     this.emit();
   }
 

@@ -17,6 +17,25 @@ npm run build    # typecheck + static production build into dist/
 npm run preview  # serve the production build
 ```
 
+## Deploying to GitHub Pages
+
+The app is fully static and is published automatically by the workflow in
+`.github/workflows/deploy.yml` (build with `npm run build`, deploy `dist/`).
+
+One-time setup:
+
+1. Push this repository to GitHub (branch `main`).
+2. In the repository, go to **Settings → Pages** and set **Source** to
+   **GitHub Actions**.
+
+After that, every push to `main` (or a manual run of the workflow from the
+**Actions** tab) rebuilds and publishes the site at
+`https://<user>.github.io/<repo>/`.
+
+Assets are referenced with relative paths (`base: './'` in
+`vite.config.ts`), so the site works from any repository sub-path without
+further configuration.
+
 ---
 
 ## Tool Shortcuts (requirements)
@@ -30,6 +49,7 @@ npm run preview  # serve the production build
 | Eraser Tool              | `E` |
 | Clone Stamp Tool         | `S` |
 | Spot Healing Brush       | `J` |
+| Palette Knife            | `K` |
 | Paint Bucket Tool        | `G` |
 | Lasso Tool               | `L` |
 | Quick Selection / Wand   | `W` |
@@ -127,6 +147,12 @@ Each tool has an icon in the tool strip and a shortcut.
   established offset). Useful for removing objects or duplicating areas.
 - **Spot Healing Brush** (`J`) – paint over a spot; it averages the surrounding
   pixels and feathers that in, blending away small imperfections.
+- **Palette Knife** (`K`) – scrape and drag existing paint. Each stamp samples
+  the pixels just behind the cursor (relative to the drag direction) and smears
+  them forward, carrying color and transparency along so hues blend and streak
+  realistically. **Strength** sets how much paint each pass lays back down,
+  **Smear** how far behind the blade samples (a larger value drags the paint
+  further along the stroke), and **Soft** feathers the edge.
 - **Paint Bucket** – flood fill from the clicked pixel with the current color
   (adjustable tolerance, constrained by the active selection).
 - **Lasso** – free-form polygonal selection.

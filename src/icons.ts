@@ -19,6 +19,7 @@ const ICONS: Record<ToolId, string> = {
   heal: WRAP(
     '<g transform="rotate(-45 12 12)"><rect x="4" y="9" width="16" height="6" rx="3"/><circle cx="10.5" cy="12" r="0.7"/><circle cx="13.5" cy="12" r="0.7"/></g>',
   ),
+  knife: WRAP('<path d="M3 21 9 15"/><path d="M8 14 18 4l2 2-10 10z"/>'),
   bucket: WRAP(
     '<path d="M6 11 12 5l7 7-6 6a2 2 0 0 1-3 0l-4-4a2 2 0 0 1 0-3z"/><path d="M9 8 7.5 6.5a2 2 0 0 1 0-3"/><path d="M19 14c1.5 2 2 3.2 2 4a2 2 0 1 1-4 0c0-.8.5-2 2-4z"/>',
   ),
