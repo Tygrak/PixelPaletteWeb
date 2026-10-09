@@ -2,6 +2,7 @@ import { rgb, RGB } from './color';
 import { cloneImage, placeImageCentered, resizeCanvasImage, resizeImage } from './image';
 import { compositeLayers, copyLayer, createLayer, duplicateLayer as duplicateLayerData, Layer } from './layers';
 import { Selection } from './selection';
+import { loadSettings, saveSettings, Settings } from './settings';
 import { ToolId } from './tools';
 
 interface Snapshot {
@@ -22,11 +23,14 @@ export class Store {
 
   palette: RGB[] = [rgb(0, 0, 0), rgb(255, 255, 255)];
 
+  settings: Settings = loadSettings();
+
   activeTool: ToolId = 'hand';
   foreground: RGB = rgb(0, 0, 0);
   brushSize = 24;
   brushOpacity = 1;
   softBrush = false;
+  pencilBrush = false;
   wandTolerance = 32;
   fillTolerance = 32;
 
@@ -376,6 +380,11 @@ export class Store {
     this.emit();
   }
 
+  setPencilBrush(pencil: boolean): void {
+    this.pencilBrush = pencil;
+    this.emit();
+  }
+
   setWandTolerance(tolerance: number): void {
     this.wandTolerance = tolerance;
     this.emit();
@@ -416,8 +425,47 @@ export class Store {
     this.emit();
   }
 
+  // Clears the selected pixels of the active layer to transparency.
+  deleteSelection(): void {
+    if (!this.selection) {
+      return;
+    }
+    const image = this.beginPaint();
+    if (!image) {
+      return;
+    }
+    const layer = this.layers[this.activeIndex];
+    const { width, height, data } = image;
+    const offsetX = layer.offsetX;
+    const offsetY = layer.offsetY;
+    for (let i = 0; i < this.selection.length; i++) {
+      if (!this.selection[i]) {
+        continue;
+      }
+      const docX = i % width;
+      const docY = (i / width) | 0;
+      const layerX = docX - offsetX;
+      const layerY = docY - offsetY;
+      if (layerX < 0 || layerX >= width || layerY < 0 || layerY >= height) {
+        continue;
+      }
+      const pos = (layerX + layerY * width) * 4;
+      data[pos] = 0;
+      data[pos + 1] = 0;
+      data[pos + 2] = 0;
+      data[pos + 3] = 0;
+    }
+    this.notify();
+  }
+
   setStatus(status: string): void {
     this.status = status;
+    this.emit();
+  }
+
+  updateSettings(patch: Partial<Settings>): void {
+    this.settings = { ...this.settings, ...patch };
+    saveSettings(this.settings);
     this.emit();
   }
 }

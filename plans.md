@@ -1,7 +1,8 @@
 -resize tool dropwdown selecting whether you are scaling, resizing extend color, resizing to emptyness
 
 
--animation mode. lets you place the animation frames on the timeline.
+afterwards add animation mode, it adds a timeline on the bottom that you can add frames to, press space to play the current animation
+-lets you place the animation frames on the timeline.
 -animation frame is just a full image with separate layers
--you can duplicate animation frames. and also option to overlay previous frame with custom opacity
+-by default duplicates current image when you add a frame
 -save lets you pick to save into either a grid or into separate images

@@ -1,5 +1,5 @@
 import './style.css';
-import { clamp, colorToHex, rgb, RGB } from './color';
+import { clamp, colorToHex, hexToColor, rgb, RGB } from './color';
 import { AppContext } from './context';
 import { DockPanel, h } from './dom';
 import { imageDataFromBlob, loadImageFile, saveImageFile } from './files';
@@ -34,13 +34,14 @@ import {
 } from './selection';
 import { Store } from './store';
 import { drawText } from './text';
-import { cloneStamp, floodFill, healStamp, paintStroke, stampBrush, ToolId, toolForShortcut, TOOLS } from './tools';
+import { cloneStamp, floodFill, healStamp, paintStroke, pencilOffsets, stampBrush, ToolId, toolForShortcut, TOOLS } from './tools';
 import { openAdjustmentsPanel } from './ui/adjustmentsPanel';
 import { openDitherPanel } from './ui/ditherPanel';
 import { openEffectsPanel } from './ui/effectsPanel';
 import { openLayersPanel } from './ui/layersPanel';
 import { openPalettePanel } from './ui/palettePanel';
 import { getActiveColorPicker, selectColorDialog } from './ui/selectColor';
+import { openSettingsPanel } from './ui/settingsPanel';
 
 const store = new Store();
 
@@ -342,6 +343,7 @@ let ditherPanel: DockPanel | null = null;
 let adjustmentsPanel: DockPanel | null = null;
 let effectsPanel: DockPanel | null = null;
 let layersPanel: DockPanel | null = null;
+let settingsPanel: DockPanel | null = null;
 
 const togglePanels: Record<string, () => void> = {
   palette: () => {
@@ -399,6 +401,17 @@ const togglePanels: Record<string, () => void> = {
     });
     applyCanvasLayout();
   },
+  settings: () => {
+    if (settingsPanel) {
+      settingsPanel.close();
+      return;
+    }
+    settingsPanel = openSettingsPanel(ctx, () => {
+      settingsPanel = null;
+      applyCanvasLayout();
+    });
+    applyCanvasLayout();
+  },
 };
 
 // --- Toolbar ---
@@ -444,8 +457,16 @@ function newDocument(): void {
     return;
   }
   commitFloating();
-  const image = createEmptyImage(1024, 1024);
-  image.data.fill(255);
+  const width = Math.max(1, store.settings.canvasWidth);
+  const height = Math.max(1, store.settings.canvasHeight);
+  const background = hexToColor(store.settings.backgroundColor);
+  const image = createEmptyImage(width, height);
+  for (let i = 0; i < width * height; i++) {
+    image.data[i * 4] = background.r;
+    image.data[i * 4 + 1] = background.g;
+    image.data[i * 4 + 2] = background.b;
+    image.data[i * 4 + 3] = 255;
+  }
   store.openImage(image);
   store.palette = BASE_COLORS.map((color) => ({ ...color }));
   store.emit();
@@ -559,6 +580,11 @@ const adjustmentsButton = h('button', {
 });
 const effectsButton = h('button', { class: 'btn sidebar-btn', text: 'Effects', onclick: () => togglePanels.effects() });
 const layersButton = h('button', { class: 'btn sidebar-btn', text: 'Layers', onclick: () => togglePanels.layers() });
+const settingsButton = h('button', {
+  class: 'btn sidebar-btn',
+  text: 'Settings',
+  onclick: () => togglePanels.settings(),
+});
 
 const sidebar = h('div', { class: 'sidebar' }, [
   restoreButton,
@@ -567,6 +593,7 @@ const sidebar = h('div', { class: 'sidebar' }, [
   adjustmentsButton,
   effectsButton,
   layersButton,
+  settingsButton,
 ]);
 
 // --- Options bar ---
@@ -603,6 +630,10 @@ const softBrushCheckbox = document.createElement('input');
 softBrushCheckbox.type = 'checkbox';
 softBrushCheckbox.checked = store.softBrush;
 softBrushCheckbox.addEventListener('change', () => store.setSoftBrush(softBrushCheckbox.checked));
+const pencilCheckbox = document.createElement('input');
+pencilCheckbox.type = 'checkbox';
+pencilCheckbox.checked = store.pencilBrush;
+pencilCheckbox.addEventListener('change', () => store.setPencilBrush(pencilCheckbox.checked));
 const brushSection = h('div', { class: 'options-section' }, [
   h('span', { class: 'row-label', text: 'Size' }),
   brushSizeInput,
@@ -610,6 +641,8 @@ const brushSection = h('div', { class: 'options-section' }, [
   brushOpacityInput,
   h('span', { class: 'row-label', text: 'Soft' }),
   softBrushCheckbox,
+  h('span', { class: 'row-label', text: 'Pencil' }),
+  pencilCheckbox,
   h('span', { class: 'row-label', text: 'Color' }),
   brushSwatch,
   pickForegroundButton,
@@ -1068,17 +1101,30 @@ function redrawOverlay(): void {
     }
   }
   if (hoverPoint && store.current && isBrushTool(store.activeTool)) {
-    const radius = Math.max(0.5, store.brushSize / 2);
-    context.beginPath();
-    context.arc(hoverPoint.x, hoverPoint.y, radius, 0, Math.PI * 2);
-    context.lineWidth = 3;
-    context.strokeStyle = 'rgba(0, 0, 0, 0.6)';
-    context.stroke();
-    context.beginPath();
-    context.arc(hoverPoint.x, hoverPoint.y, radius, 0, Math.PI * 2);
-    context.lineWidth = 1;
-    context.strokeStyle = 'rgba(255, 255, 255, 0.9)';
-    context.stroke();
+    if (store.pencilBrush) {
+      // Show the exact pixels the pencil will paint.
+      const cx = Math.floor(hoverPoint.x);
+      const cy = Math.floor(hoverPoint.y);
+      for (const { dx, dy } of pencilOffsets(store.brushSize)) {
+        const px = cx + dx;
+        const py = cy + dy;
+        const dark = ((px + py) & 1) === 0;
+        context.fillStyle = dark ? 'rgba(0, 0, 0, 0.6)' : 'rgba(255, 255, 255, 0.6)';
+        context.fillRect(px, py, 1, 1);
+      }
+    } else {
+      const radius = Math.max(0.5, store.brushSize / 2);
+      context.beginPath();
+      context.arc(hoverPoint.x, hoverPoint.y, radius, 0, Math.PI * 2);
+      context.lineWidth = 3;
+      context.strokeStyle = 'rgba(0, 0, 0, 0.6)';
+      context.stroke();
+      context.beginPath();
+      context.arc(hoverPoint.x, hoverPoint.y, radius, 0, Math.PI * 2);
+      context.lineWidth = 1;
+      context.strokeStyle = 'rgba(255, 255, 255, 0.9)';
+      context.stroke();
+    }
   }
 }
 
@@ -1678,14 +1724,18 @@ function paintStrokeSegment(
   const layer = store.activeLayer;
   const offsetX = layer ? layer.offsetX : 0;
   const offsetY = layer ? layer.offsetY : 0;
-  const radius = Math.max(0.5, (store.brushSize / 2) * (0.35 + 0.65 * pressure));
-  const alpha = clamp(store.brushOpacity * (0.25 + 0.75 * pressure), 0, 1);
+  const pencil = store.pencilBrush;
+  const radius = pencil
+    ? Math.max(0.5, store.brushSize / 2)
+    : Math.max(0.5, (store.brushSize / 2) * (0.35 + 0.65 * pressure));
+  const alpha = pencil ? store.brushOpacity : clamp(store.brushOpacity * (0.25 + 0.75 * pressure), 0, 1);
 
   if (strokeKind === 'clone' && strokeSource) {
     const params = {
       radius,
       alpha,
       soft: store.softBrush,
+      pencil,
       selection: store.selection,
       layerOffsetX: offsetX,
       layerOffsetY: offsetY,
@@ -1698,6 +1748,7 @@ function paintStrokeSegment(
       radius,
       alpha,
       soft: store.softBrush,
+      pencil,
       selection: store.selection,
       layerOffsetX: offsetX,
       layerOffsetY: offsetY,
@@ -1711,6 +1762,7 @@ function paintStrokeSegment(
       selection: store.selection,
       erase: strokeKind === 'eraser',
       soft: store.softBrush,
+      pencil,
       offsetX,
       offsetY,
     };
@@ -1857,6 +1909,16 @@ window.addEventListener('keydown', (event) => {
     return;
   }
   if (typing || ctrl) {
+    return;
+  }
+  if (event.key === 'Delete' || event.key === 'Backspace') {
+    if (floating) {
+      commitFloating();
+    }
+    if (store.selection) {
+      event.preventDefault();
+      store.deleteSelection();
+    }
     return;
   }
   if (event.key === 'Escape') {
@@ -2032,6 +2094,7 @@ function render(): void {
   }
   brushSwatch.style.background = `rgb(${store.foreground.r}, ${store.foreground.g}, ${store.foreground.b})`;
   softBrushCheckbox.checked = store.softBrush;
+  pencilCheckbox.checked = store.pencilBrush;
 
   const tool = store.activeTool;
   const showBrush = isBrushTool(tool);
@@ -2063,6 +2126,7 @@ function render(): void {
   adjustmentsButton.disabled = store.working;
   effectsButton.disabled = store.working;
   layersButton.disabled = store.working;
+  settingsButton.disabled = store.working;
   openButton.disabled = store.working;
   newButton.disabled = store.working;
   saveButton.disabled = store.working || store.current === null;

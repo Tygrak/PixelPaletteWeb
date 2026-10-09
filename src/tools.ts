@@ -56,6 +56,8 @@ export interface BrushParams {
   erase: boolean;
   // Feather the brush edge: alpha falls off with distance from the center.
   soft: boolean;
+  // Hard pixel edges: paint the exact pixels with no antialiasing.
+  pencil: boolean;
   // Active-layer offset, so strokes are painted in document space (selection
   // masks are also in document space).
   offsetX: number;
@@ -91,25 +93,9 @@ export function stampBrush(
       if (selection && !selection[docIndex]) {
         continue;
       }
-      const dx = docX - centerX;
-      const dy = docY - centerY;
-      const distance = Math.sqrt(dx * dx + dy * dy);
-      let coverage: number;
-      if (soft) {
-        // Smooth radial falloff: full strength at the center, zero at the rim.
-        const t = 1 - distance / radius;
-        if (t <= 0) {
-          continue;
-        }
-        coverage = t * t * (3 - 2 * t);
-      } else {
-        coverage = radius - distance + 0.5;
-        if (coverage <= 0) {
-          continue;
-        }
-        if (coverage > 1) {
-          coverage = 1;
-        }
+      const coverage = coverageAt(docX, docY, centerX, centerY, radius, soft, params.pencil);
+      if (coverage <= 0) {
+        continue;
       }
       const a = alpha * coverage;
       if (a <= 0) {
@@ -169,7 +155,7 @@ export interface FillParams {
 }
 
 // Shared brush-edge coverage: soft fades smoothly to the rim, hard is crisp
-// with a 1px antialiased edge.
+// with a 1px antialiased edge, pencil is fully hard (exact pixels, no AA).
 function coverageFor(distance: number, radius: number, soft: boolean): number {
   if (soft) {
     const t = 1 - distance / radius;
@@ -185,10 +171,44 @@ function coverageFor(distance: number, radius: number, soft: boolean): number {
   return coverage > 1 ? 1 : coverage;
 }
 
+// The exact set of pixel offsets a pencil of the given size (diameter) paints,
+// relative to the cursor pixel. Shared by stamping and the on-screen cursor.
+export function pencilOffsets(size: number): { dx: number; dy: number }[] {
+  const radius = Math.max(0.5, size / 2);
+  const half = Math.ceil(radius);
+  const offsets: { dx: number; dy: number }[] = [];
+  for (let dy = -half; dy <= half; dy++) {
+    for (let dx = -half; dx <= half; dx++) {
+      if (dx * dx + dy * dy <= radius * radius) {
+        offsets.push({ dx, dy });
+      }
+    }
+  }
+  return offsets;
+}
+
+function coverageAt(
+  docX: number,
+  docY: number,
+  centerX: number,
+  centerY: number,
+  radius: number,
+  soft: boolean,
+  pencil: boolean,
+): number {
+  if (pencil) {
+    const dx = docX - Math.floor(centerX);
+    const dy = docY - Math.floor(centerY);
+    return dx * dx + dy * dy <= radius * radius ? 1 : 0;
+  }
+  return coverageFor(Math.hypot(docX - centerX, docY - centerY), radius, soft);
+}
+
 export interface CloneParams {
   radius: number;
   alpha: number;
   soft: boolean;
+  pencil: boolean;
   selection: Selection | null;
   layerOffsetX: number;
   layerOffsetY: number;
@@ -228,7 +248,7 @@ export function cloneStamp(
       if (params.selection && !params.selection[docIndex]) {
         continue;
       }
-      const coverage = coverageFor(Math.hypot(docX - centerX, docY - centerY), radius, params.soft);
+      const coverage = coverageAt(docX, docY, centerX, centerY, radius, params.soft, params.pencil);
       if (coverage <= 0) {
         continue;
       }
@@ -266,6 +286,7 @@ export interface HealParams {
   radius: number;
   alpha: number;
   soft: boolean;
+  pencil: boolean;
   selection: Selection | null;
   layerOffsetX: number;
   layerOffsetY: number;
@@ -343,7 +364,7 @@ export function healStamp(
       if (params.selection && !params.selection[docX + docY * width]) {
         continue;
       }
-      const coverage = coverageFor(Math.hypot(docX - centerX, docY - centerY), radius, params.soft);
+      const coverage = coverageAt(docX, docY, centerX, centerY, radius, params.soft, params.pencil);
       if (coverage <= 0) {
         continue;
       }

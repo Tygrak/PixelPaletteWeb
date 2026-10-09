@@ -45,6 +45,7 @@ npm run preview  # serve the production build
 | Undo   | `Ctrl + Z` |
 | Redo   | `Ctrl + Shift + Z` (also `Ctrl + Y`) |
 | Deselect selection | `Ctrl + D` |
+| Delete selection (to transparency) | `Delete` / `Backspace` |
 | Copy selection to clipboard | `Ctrl + C` |
 | Paste image as new layer     | `Ctrl + V` |
 
@@ -116,8 +117,10 @@ Each tool has an icon in the tool strip and a shortcut.
 - **Hand** – pan the view.
 - **Zoom** – click to zoom in / `Alt`+click to zoom out.
 - **Brush** – paint the foreground color with a round tip; **Soft** enables a
-  feathered edge whose opacity falls off toward the rim; size and opacity are
-  pressure-sensitive; stroke interpolation avoids gaps.
+  feathered edge whose opacity falls off toward the rim; **Pencil** gives hard,
+  non-antialiased pixel edges and the cursor shows the exact pixels that will be
+  painted; size and opacity are pressure-sensitive; stroke interpolation avoids
+  gaps.
 - **Eraser** – erase to transparency (with the same pressure behaviour).
 - **Clone Stamp** (`S`) – `Alt`+click to set the source point, then paint to
   copy pixels from there (aligned: the source follows your stroke at the
@@ -214,11 +217,20 @@ the cursor follows the pointer.
 
 ### Docked workspace panels
 
-- Dither, Palette, Adjustments, Effects and Layers open as docked panels beside
-  the sidebar (not modal windows) and can be open at the same time.
+- Dither, Palette, Adjustments, Effects, Layers and Settings open as docked
+  panels beside the sidebar (not modal windows) and can be open at the same
+  time.
 - Panels stack vertically; their combined column is resizable by dragging its
   right edge.
 - The image remains fully interactive while panels are open.
+
+### Settings panel
+
+- Default canvas width/height used by **New File**.
+- Default background color for a new canvas.
+- Animation mode toggle (placeholder; not implemented yet).
+- All settings are saved in the browser's `localStorage`, so they persist
+  between sessions.
 
 ---
 
