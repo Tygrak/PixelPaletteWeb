@@ -1,6 +1,6 @@
 import { rgb, RGB } from './color';
 import { cloneImage, placeImageCentered, resizeCanvasImage, resizeImage } from './image';
-import { cloneLayer, compositeLayers, copyLayer, createLayer, Layer } from './layers';
+import { compositeLayers, copyLayer, createLayer, duplicateLayer as duplicateLayerData, Layer } from './layers';
 import { Selection } from './selection';
 import { ToolId } from './tools';
 
@@ -251,6 +251,18 @@ export class Store {
     this.pushHistory();
     const layer = createLayer(this.width, this.height, `Layer ${this.layers.length + 1}`);
     this.layers.splice(this.activeIndex + 1, 0, layer);
+    this.activeIndex += 1;
+    this.notify();
+  }
+
+  duplicateLayer(): void {
+    const layer = this.activeLayer;
+    if (!layer) {
+      return;
+    }
+    this.pushHistory();
+    const copy = duplicateLayerData(layer, `${layer.name} copy`);
+    this.layers.splice(this.activeIndex + 1, 0, copy);
     this.activeIndex += 1;
     this.notify();
   }

@@ -34,7 +34,7 @@ import {
 } from './selection';
 import { Store } from './store';
 import { drawText } from './text';
-import { floodFill, paintStroke, stampBrush, ToolId, toolForShortcut, TOOLS } from './tools';
+import { cloneStamp, floodFill, healStamp, paintStroke, stampBrush, ToolId, toolForShortcut, TOOLS } from './tools';
 import { openAdjustmentsPanel } from './ui/adjustmentsPanel';
 import { openDitherPanel } from './ui/ditherPanel';
 import { openEffectsPanel } from './ui/effectsPanel';
@@ -116,6 +116,9 @@ function liftToFloating(copy: boolean): boolean {
   store.pushHistory();
   store.layers[store.activeIndex] = { ...layer, image: result.cleared };
   floating = result.floating;
+  floatingMask = store.selection;
+  floatingOriginCx = result.floating.cx;
+  floatingOriginCy = result.floating.cy;
   store.notify();
   return true;
 }
@@ -183,11 +186,72 @@ async function copySelectionToClipboard(): Promise<boolean> {
   }
 }
 
+// A rectangular selection covering the (possibly rotated) floating box, so the
+// selection follows the content after a move/copy and can be moved again.
+function selectionForBox(box: Box): Selection | null {
+  const corners = boxCorners(box);
+  const xs = corners.map((corner) => corner.x);
+  const ys = corners.map((corner) => corner.y);
+  const x0 = Math.max(0, Math.floor(Math.min(...xs)));
+  const y0 = Math.max(0, Math.floor(Math.min(...ys)));
+  const x1 = Math.min(store.width - 1, Math.ceil(Math.max(...xs)));
+  const y1 = Math.min(store.height - 1, Math.ceil(Math.max(...ys)));
+  if (x1 < x0 || y1 < y0) {
+    return null;
+  }
+  return rectSelection(store.width, store.height, x0, y0, x1, y1);
+}
+
+// Transforms the original selection mask by the floating's translate/scale/
+// rotate so the exact selected shape follows the moved content.
+function transformMask(
+  mask: Selection,
+  originCx: number,
+  originCy: number,
+  f: Floating,
+): Selection | null {
+  const cos = Math.cos(f.rotation);
+  const sin = Math.sin(f.rotation);
+  const corners = boxCorners(boxFromFloating(f));
+  const xs = corners.map((corner) => corner.x);
+  const ys = corners.map((corner) => corner.y);
+  const x0 = Math.max(0, Math.floor(Math.min(...xs)));
+  const y0 = Math.max(0, Math.floor(Math.min(...ys)));
+  const x1 = Math.min(store.width - 1, Math.ceil(Math.max(...xs)));
+  const y1 = Math.min(store.height - 1, Math.ceil(Math.max(...ys)));
+  if (x1 < x0 || y1 < y0) {
+    return null;
+  }
+  const result = new Uint8Array(store.width * store.height);
+  let count = 0;
+  for (let dy = y0; dy <= y1; dy++) {
+    for (let dx = x0; dx <= x1; dx++) {
+      const rx = dx - f.cx;
+      const ry = dy - f.cy;
+      const localX = rx * cos + ry * sin;
+      const localY = -rx * sin + ry * cos;
+      const sourceX = originCx + localX / f.scaleX;
+      const sourceY = originCy + localY / f.scaleY;
+      const ix = Math.floor(sourceX);
+      const iy = Math.floor(sourceY);
+      if (ix < 0 || ix >= store.width || iy < 0 || iy >= store.height) {
+        continue;
+      }
+      if (mask[ix + iy * store.width]) {
+        result[dx + dy * store.width] = 1;
+        count++;
+      }
+    }
+  }
+  return count > 0 ? result : null;
+}
+
 function commitFloating(): void {
   if (!floating) {
     return;
   }
   const layer = store.activeLayer;
+  const box = boxFromFloating(floating);
   if (layer) {
     const baked = bakeFloating(floating, store.width, store.height);
     const target = createEmptyImage(store.width, store.height);
@@ -195,8 +259,12 @@ function commitFloating(): void {
     compositeOverLayer(target, baked, layer.offsetX, layer.offsetY);
     store.layers[store.activeIndex] = { ...layer, image: target };
   }
+  const transformed = floatingMask
+    ? transformMask(floatingMask, floatingOriginCx, floatingOriginCy, floating)
+    : selectionForBox(box);
   floating = null;
-  store.clearSelection();
+  floatingMask = null;
+  store.selection = transformed;
   store.notify();
 }
 
@@ -205,6 +273,7 @@ function cancelFloating(): void {
     return;
   }
   floating = null;
+  floatingMask = null;
   store.clearSelection();
   store.undo();
 }
@@ -221,6 +290,20 @@ const canvasPlaceholder = h('div', {
 const canvasArea = h('div', { class: 'canvas-area' }, [canvasStack, canvasPlaceholder]);
 const resizePreview = h('div', { class: 'resize-preview' });
 canvasArea.append(resizePreview);
+
+const samplePreview = h('div', { class: 'sample-preview' });
+document.body.append(samplePreview);
+
+function showSamplePreview(clientX: number, clientY: number, color: RGB): void {
+  samplePreview.style.background = `rgb(${color.r}, ${color.g}, ${color.b})`;
+  samplePreview.style.left = `${clientX + 16}px`;
+  samplePreview.style.top = `${clientY + 16}px`;
+  samplePreview.classList.add('visible');
+}
+
+function hideSamplePreview(): void {
+  samplePreview.classList.remove('visible');
+}
 const dock = h('div', { class: 'dock hidden' });
 const dockResizer = h('div', { class: 'dock-resizer' });
 
@@ -827,6 +910,19 @@ function sampleColorAt(img: ImageData, x: number, y: number): RGB {
   return getPixel(img, px, py);
 }
 
+// Samples a color, routes it to the active color picker (or the foreground)
+// and shows the swatch preview. Shared by the eyedropper and Alt+brush/bucket.
+function applySample(img: ImageData, x: number, y: number, clientX: number, clientY: number): void {
+  const color = sampleColorAt(img, x, y);
+  const picker = getActiveColorPicker();
+  if (picker) {
+    picker(color);
+  } else {
+    store.setForeground(color);
+  }
+  showSamplePreview(clientX, clientY, color);
+}
+
 // --- Selection overlay ---
 
 let cachedSelectionMask: Uint8Array | null = null;
@@ -852,6 +948,12 @@ let hoverPoint: { x: number; y: number } | null = null;
 let textEditing: { x: number; y: number; content: string } | null = null;
 let caretOn = true;
 let caretTimer = 0;
+
+// The exact selection mask captured when a floating move/copy began, plus the
+// floating's initial center, so it can be transformed to follow the content.
+let floatingMask: Selection | null = null;
+let floatingOriginCx = 0;
+let floatingOriginCy = 0;
 
 function startCaretBlink(): void {
   stopCaretBlink();
@@ -941,7 +1043,31 @@ function redrawOverlay(): void {
     }
     context.restore();
   }
-  if (hoverPoint && store.current && (store.activeTool === 'brush' || store.activeTool === 'eraser')) {
+  if (store.activeTool === 'clone') {
+    let markerX: number | null = null;
+    let markerY: number | null = null;
+    if (cloneOffset && hoverPoint) {
+      markerX = hoverPoint.x - cloneOffset.x;
+      markerY = hoverPoint.y - cloneOffset.y;
+    } else if (cloneSource) {
+      markerX = cloneSource.x;
+      markerY = cloneSource.y;
+    }
+    if (markerX !== null && markerY !== null) {
+      context.beginPath();
+      context.arc(markerX, markerY, Math.max(2, store.brushSize * 0.3), 0, Math.PI * 2);
+      context.lineWidth = 1;
+      context.strokeStyle = 'rgba(0, 255, 255, 0.9)';
+      context.stroke();
+      context.beginPath();
+      context.moveTo(markerX - 4, markerY);
+      context.lineTo(markerX + 4, markerY);
+      context.moveTo(markerX, markerY - 4);
+      context.lineTo(markerX, markerY + 4);
+      context.stroke();
+    }
+  }
+  if (hoverPoint && store.current && isBrushTool(store.activeTool)) {
     const radius = Math.max(0.5, store.brushSize / 2);
     context.beginPath();
     context.arc(hoverPoint.x, hoverPoint.y, radius, 0, Math.PI * 2);
@@ -965,8 +1091,18 @@ let panLastY = 0;
 let spaceHeld = false;
 
 let strokeImage: ImageData | null = null;
+let strokeSource: ImageData | null = null;
+let strokeKind: 'brush' | 'eraser' | 'clone' | 'heal' = 'brush';
 let strokeLastX = 0;
 let strokeLastY = 0;
+
+// Clone Stamp source point / offset (document space).
+let cloneSource: { x: number; y: number } | null = null;
+let cloneOffset: { x: number; y: number } | null = null;
+
+function isBrushTool(tool: ToolId): boolean {
+  return tool === 'brush' || tool === 'eraser' || tool === 'clone' || tool === 'heal';
+}
 
 let selecting: {
   type: 'marquee' | 'lasso';
@@ -1086,13 +1222,14 @@ canvas.addEventListener('pointerdown', (event) => {
     return;
   }
   canvas.setPointerCapture(event.pointerId);
+  hideSamplePreview();
   const point = toImagePoint(event.clientX, event.clientY);
   const tool = store.activeTool;
 
   const picker = getActiveColorPicker();
   if (picker) {
     sampling = true;
-    picker(sampleColorAt(img, point.x, point.y));
+    applySample(img, point.x, point.y, event.clientX, event.clientY);
     return;
   }
 
@@ -1107,7 +1244,7 @@ canvas.addEventListener('pointerdown', (event) => {
   // Alt+click with the brush or paint bucket acts as an eyedropper.
   if (event.altKey && (tool === 'brush' || tool === 'bucket')) {
     sampling = true;
-    store.setForeground(sampleColorAt(img, point.x, point.y));
+    applySample(img, point.x, point.y, event.clientX, event.clientY);
     return;
   }
 
@@ -1117,7 +1254,7 @@ canvas.addEventListener('pointerdown', (event) => {
       break;
     case 'eyedropper':
       sampling = true;
-      store.setForeground(sampleColorAt(img, point.x, point.y));
+      applySample(img, point.x, point.y, event.clientX, event.clientY);
       break;
     case 'brush':
     case 'eraser': {
@@ -1125,10 +1262,57 @@ canvas.addEventListener('pointerdown', (event) => {
       if (!image) {
         break;
       }
+      strokeKind = tool === 'eraser' ? 'eraser' : 'brush';
+      strokeSource = null;
       strokeImage = image;
       strokeLastX = point.x;
       strokeLastY = point.y;
-      paintSegment(image, point.x, point.y, point.x, point.y, pointerPressure(event));
+      paintStrokeSegment(point.x, point.y, point.x, point.y, pointerPressure(event));
+      break;
+    }
+    case 'clone': {
+      if (event.altKey) {
+        cloneSource = { x: point.x, y: point.y };
+        cloneOffset = null;
+        redrawOverlay();
+        break;
+      }
+      const before = store.activeLayer;
+      if (!before || !cloneSource) {
+        break;
+      }
+      const source = before.image;
+      const image = store.beginPaint();
+      if (!image) {
+        break;
+      }
+      if (!cloneOffset) {
+        cloneOffset = { x: point.x - cloneSource.x, y: point.y - cloneSource.y };
+      }
+      strokeKind = 'clone';
+      strokeSource = source;
+      strokeImage = image;
+      strokeLastX = point.x;
+      strokeLastY = point.y;
+      paintStrokeSegment(point.x, point.y, point.x, point.y, pointerPressure(event));
+      break;
+    }
+    case 'heal': {
+      const before = store.activeLayer;
+      if (!before) {
+        break;
+      }
+      const source = before.image;
+      const image = store.beginPaint();
+      if (!image) {
+        break;
+      }
+      strokeKind = 'heal';
+      strokeSource = source;
+      strokeImage = image;
+      strokeLastX = point.x;
+      strokeLastY = point.y;
+      paintStrokeSegment(point.x, point.y, point.x, point.y, pointerPressure(event));
       break;
     }
     case 'bucket': {
@@ -1221,7 +1405,7 @@ canvas.addEventListener('pointermove', (event) => {
   }
   const point = toImagePoint(event.clientX, event.clientY);
 
-  if (store.activeTool === 'brush' || store.activeTool === 'eraser') {
+  if (isBrushTool(store.activeTool)) {
     hoverPoint = { x: point.x, y: point.y };
     redrawOverlay();
   }
@@ -1239,18 +1423,12 @@ canvas.addEventListener('pointermove', (event) => {
   }
 
   if (sampling) {
-    const picker = getActiveColorPicker();
-    const color = sampleColorAt(img, point.x, point.y);
-    if (picker) {
-      picker(color);
-    } else {
-      store.setForeground(color);
-    }
+    applySample(img, point.x, point.y, event.clientX, event.clientY);
     return;
   }
 
   if (strokeImage) {
-    paintSegment(strokeImage, strokeLastX, strokeLastY, point.x, point.y, pointerPressure(event));
+    paintStrokeSegment(strokeLastX, strokeLastY, point.x, point.y, pointerPressure(event));
     strokeLastX = point.x;
     strokeLastY = point.y;
     return;
@@ -1331,11 +1509,17 @@ canvas.addEventListener('pointermove', (event) => {
     return;
   }
 
+  if (store.activeTool === 'eyedropper' || ((store.activeTool === 'brush' || store.activeTool === 'bucket') && event.altKey)) {
+    showSamplePreview(event.clientX, event.clientY, sampleColorAt(img, point.x, point.y));
+  } else {
+    hideSamplePreview();
+  }
   updateHoverCursor(point.x, point.y);
 });
 
 canvas.addEventListener('pointerleave', () => {
   hoverPoint = null;
+  hideSamplePreview();
   canvas.style.cursor = '';
   redrawOverlay();
 });
@@ -1416,6 +1600,7 @@ function endPointer(event: PointerEvent): void {
   if (strokeImage) {
     store.notify();
     strokeImage = null;
+    strokeSource = null;
   }
   if (selecting) {
     if (selecting.type === 'marquee' && !selecting.moved) {
@@ -1436,6 +1621,7 @@ function endPointer(event: PointerEvent): void {
     bakeActiveLayerOffset();
   }
   sampling = false;
+  hideSamplePreview();
   transformDrag = null;
 
   if (resizeDrag) {
@@ -1462,33 +1648,77 @@ function endPointer(event: PointerEvent): void {
 canvas.addEventListener('pointerup', endPointer);
 canvas.addEventListener('pointercancel', endPointer);
 
-function paintSegment(
-  image: ImageData,
+function forEachStamp(
+  fromX: number,
+  fromY: number,
+  toX: number,
+  toY: number,
+  radius: number,
+  fn: (x: number, y: number) => void,
+): void {
+  const distance = Math.sqrt((toX - fromX) ** 2 + (toY - fromY) ** 2);
+  const step = Math.max(0.5, radius / 3);
+  const steps = Math.max(1, Math.ceil(distance / step));
+  for (let i = 1; i <= steps; i++) {
+    const t = i / steps;
+    fn(fromX + (toX - fromX) * t, fromY + (toY - fromY) * t);
+  }
+}
+
+function paintStrokeSegment(
   fromX: number,
   fromY: number,
   toX: number,
   toY: number,
   pressure: number,
 ): void {
+  if (!strokeImage) {
+    return;
+  }
   const layer = store.activeLayer;
-  const offsetXValue = layer ? layer.offsetX : 0;
-  const offsetYValue = layer ? layer.offsetY : 0;
+  const offsetX = layer ? layer.offsetX : 0;
+  const offsetY = layer ? layer.offsetY : 0;
   const radius = Math.max(0.5, (store.brushSize / 2) * (0.35 + 0.65 * pressure));
   const alpha = clamp(store.brushOpacity * (0.25 + 0.75 * pressure), 0, 1);
-  const params = {
-    radius,
-    color: store.foreground,
-    alpha,
-    selection: store.selection,
-    erase: store.activeTool === 'eraser',
-    soft: store.softBrush,
-    offsetX: offsetXValue,
-    offsetY: offsetYValue,
-  };
-  if (fromX === toX && fromY === toY) {
-    stampBrush(image, toX, toY, params);
+
+  if (strokeKind === 'clone' && strokeSource) {
+    const params = {
+      radius,
+      alpha,
+      soft: store.softBrush,
+      selection: store.selection,
+      layerOffsetX: offsetX,
+      layerOffsetY: offsetY,
+      cloneOffsetX: cloneOffset?.x ?? 0,
+      cloneOffsetY: cloneOffset?.y ?? 0,
+    };
+    forEachStamp(fromX, fromY, toX, toY, radius, (x, y) => cloneStamp(strokeImage!, strokeSource!, x, y, params));
+  } else if (strokeKind === 'heal' && strokeSource) {
+    const params = {
+      radius,
+      alpha,
+      soft: store.softBrush,
+      selection: store.selection,
+      layerOffsetX: offsetX,
+      layerOffsetY: offsetY,
+    };
+    forEachStamp(fromX, fromY, toX, toY, radius, (x, y) => healStamp(strokeImage!, strokeSource!, x, y, params));
   } else {
-    paintStroke(image, fromX, fromY, toX, toY, params);
+    const params = {
+      radius,
+      color: store.foreground,
+      alpha,
+      selection: store.selection,
+      erase: strokeKind === 'eraser',
+      soft: store.softBrush,
+      offsetX,
+      offsetY,
+    };
+    if (fromX === toX && fromY === toY) {
+      stampBrush(strokeImage, toX, toY, params);
+    } else {
+      paintStroke(strokeImage, fromX, fromY, toX, toY, params);
+    }
   }
   store.notify();
 }
@@ -1613,6 +1843,17 @@ window.addEventListener('keydown', (event) => {
       event.preventDefault();
       void copySelectionToClipboard();
     }
+    return;
+  }
+  if (ctrl && event.key.toLowerCase() === 'd') {
+    if (typing) {
+      return;
+    }
+    event.preventDefault();
+    if (floating) {
+      commitFloating();
+    }
+    store.clearSelection();
     return;
   }
   if (typing || ctrl) {
@@ -1793,7 +2034,7 @@ function render(): void {
   softBrushCheckbox.checked = store.softBrush;
 
   const tool = store.activeTool;
-  const showBrush = tool === 'brush' || tool === 'eraser';
+  const showBrush = isBrushTool(tool);
   const showBucket = tool === 'bucket';
   const showWand = tool === 'wand';
   const showZoom = tool === 'zoom';

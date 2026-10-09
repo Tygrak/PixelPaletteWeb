@@ -28,6 +28,8 @@ npm run preview  # serve the production build
 | Zoom Tool                | `Z` |
 | Brush Tool               | `B` |
 | Eraser Tool              | `E` |
+| Clone Stamp Tool         | `S` |
+| Spot Healing Brush       | `J` |
 | Paint Bucket Tool        | `G` |
 | Lasso Tool               | `L` |
 | Quick Selection / Wand   | `W` |
@@ -42,6 +44,7 @@ npm run preview  # serve the production build
 | ------ | -------- |
 | Undo   | `Ctrl + Z` |
 | Redo   | `Ctrl + Shift + Z` (also `Ctrl + Y`) |
+| Deselect selection | `Ctrl + D` |
 | Copy selection to clipboard | `Ctrl + C` |
 | Paste image as new layer     | `Ctrl + V` |
 
@@ -116,6 +119,11 @@ Each tool has an icon in the tool strip and a shortcut.
   feathered edge whose opacity falls off toward the rim; size and opacity are
   pressure-sensitive; stroke interpolation avoids gaps.
 - **Eraser** – erase to transparency (with the same pressure behaviour).
+- **Clone Stamp** (`S`) – `Alt`+click to set the source point, then paint to
+  copy pixels from there (aligned: the source follows your stroke at the
+  established offset). Useful for removing objects or duplicating areas.
+- **Spot Healing Brush** (`J`) – paint over a spot; it averages the surrounding
+  pixels and feathers that in, blending away small imperfections.
 - **Paint Bucket** – flood fill from the clicked pixel with the current color
   (adjustable tolerance, constrained by the active selection).
 - **Lasso** – free-form polygonal selection.
@@ -139,20 +147,22 @@ brush and eraser to the selected region. `Esc` clears the selection.
 The selection is outlined with a black/white checkerboard border so it is
 visible on any image. For the **Marquee**, **Lasso** and **Wand** tools, hold
 `Shift` to add to the current selection or `Alt` to subtract from it (no
-modifier replaces it).
+modifier replaces it). `Esc` or `Ctrl + D` clears the selection.
 
 When the **Brush** or **Paint Bucket** tool is active, the options bar shows the
 current palette as a row of swatches; click a swatch to make it the active
 color (the active swatch is highlighted). `Alt`+click with either tool acts as
-an eyedropper to sample a color from the image.
+an eyedropper to sample a color from the image. While sampling (the eyedropper
+tool, or holding `Alt` with the brush/bucket), a swatch showing the color under
+the cursor follows the pointer.
 
 ### Layers
 
 - Docked **Layers** panel: list of layers with per-layer visibility toggles and
   an active-layer highlight.
 - Double-click a layer to rename it; drag a layer to reorder the stack.
-- New Layer (`Shift + Ctrl + N`), Merge Down (`Ctrl + E`, merges the active
-  layer into the one below), Delete Layer.
+- New Layer (`Shift + Ctrl + N`), Duplicate Layer, Merge Down (`Ctrl + E`,
+  merges the active layer into the one below), Delete Layer.
 - Layers are alpha-composited (source-over) for display, saving, and all
   processing operations.
 

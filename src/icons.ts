@@ -15,6 +15,10 @@ const ICONS: Record<ToolId, string> = {
   zoom: WRAP('<circle cx="11" cy="11" r="7"/><path d="M16.5 16.5 21 21M8 11h6M11 8v6"/>'),
   brush: WRAP('<path d="M14.5 4.5 19.5 9.5 9 20H4v-5z"/><path d="M13 6 18 11"/>'),
   eraser: WRAP('<path d="M4 16 12 8l5 5-8 8H7z"/><path d="M12 8l3.5-3.5a2 2 0 0 1 3 0l2 2a2 2 0 0 1 0 3L17 13z"/>'),
+  clone: WRAP('<path d="M12 3v4"/><path d="M8 7h8l-1 5H9z"/><path d="M7 16h10v3H7z"/><path d="M5 19h14"/>'),
+  heal: WRAP(
+    '<g transform="rotate(-45 12 12)"><rect x="4" y="9" width="16" height="6" rx="3"/><circle cx="10.5" cy="12" r="0.7"/><circle cx="13.5" cy="12" r="0.7"/></g>',
+  ),
   bucket: WRAP(
     '<path d="M6 11 12 5l7 7-6 6a2 2 0 0 1-3 0l-4-4a2 2 0 0 1 0-3z"/><path d="M9 8 7.5 6.5a2 2 0 0 1 0-3"/><path d="M19 14c1.5 2 2 3.2 2 4a2 2 0 1 1-4 0c0-.8.5-2 2-4z"/>',
   ),

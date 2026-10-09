@@ -30,6 +30,11 @@ export function cloneLayer(layer: Layer): Layer {
   return { ...layer, image: cloneImage(layer.image) };
 }
 
+// Creates a copy of a layer with a fresh id and the given name.
+export function duplicateLayer(layer: Layer, name: string): Layer {
+  return { ...layer, id: nextLayerId++, name, image: cloneImage(layer.image) };
+}
+
 // Shallow copy: shares the underlying ImageData (use when the image will be
 // replaced rather than mutated in place).
 export function copyLayer(layer: Layer): Layer {

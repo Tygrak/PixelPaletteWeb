@@ -210,6 +210,7 @@ export function openLayersPanel(ctx: AppContext, onClose?: () => void): DockPane
       h('div', { class: 'fill' }, [list]),
       h('div', { class: 'button-row' }, [
         button('New Layer', () => store.addLayer()),
+        button('Duplicate Layer', () => store.duplicateLayer()),
         button('Rename Layer', () => renameActive()),
         button('Merge Down', () => store.mergeLayers()),
         button('Delete Layer', () => store.deleteLayer()),
