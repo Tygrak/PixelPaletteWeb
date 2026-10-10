@@ -511,6 +511,7 @@ export function floodFill(image: ImageData, seedX: number, seedY: number, params
   const seedR = data[seedPos];
   const seedG = data[seedPos + 1];
   const seedB = data[seedPos + 2];
+  const seedA = data[seedPos + 3];
   const tolerance = params.tolerance;
   const visited = new Uint8Array(width * height);
   const { selection, offsetX, offsetY, color, alpha } = params;
@@ -530,7 +531,10 @@ export function floodFill(image: ImageData, seedX: number, seedY: number, params
     const dr = data[pos] - seedR;
     const dg = data[pos + 1] - seedG;
     const db = data[pos + 2] - seedB;
-    return Math.sqrt(dr * dr + dg * dg + db * db) <= tolerance;
+    const da = data[pos + 3] - seedA;
+    // Compare alpha too: transparent pixels share a zero RGB with black lines,
+    // so RGB-only matching would leak through everything on transparent images.
+    return Math.sqrt(dr * dr + dg * dg + db * db + da * da) <= tolerance;
   };
   const paint = (x: number, y: number): void => {
     const index = x + y * width;

@@ -110,6 +110,25 @@ body {
   display: block;
 }
 
+/* Backdrop shown through transparent pixels (Settings → Image backdrop). */
+.canvas-stack.backdrop-checker {
+  background-color: #ffffff;
+  background-image: linear-gradient(45deg, #cdd0cf 25%, transparent 25%),
+    linear-gradient(-45deg, #cdd0cf 25%, transparent 25%),
+    linear-gradient(45deg, transparent 75%, #cdd0cf 75%),
+    linear-gradient(-45deg, transparent 75%, #cdd0cf 75%);
+  background-size: 16px 16px;
+  background-position: 0 0, 0 8px, 8px -8px, -8px 0;
+}
+
+.canvas-stack.backdrop-black {
+  background: #000000;
+}
+
+.canvas-stack.backdrop-white {
+  background: #ffffff;
+}
+
 .main-canvas {
   display: block;
   width: 100%;
@@ -638,6 +657,116 @@ input[type='checkbox'] {
   flex: 1;
   min-width: 0;
   padding: 2px 4px;
+}
+
+/* --- Animation timeline --- */
+.timeline {
+  display: flex;
+  align-items: stretch;
+  gap: 8px;
+  height: 132px;
+  padding: 8px;
+  background: var(--bg-panel);
+  border-top: 2px solid #000;
+}
+
+.timeline.hidden {
+  display: none;
+}
+
+.timeline-controls {
+  flex: 0 0 auto;
+  display: flex;
+  flex-direction: column;
+  justify-content: center;
+  gap: 8px;
+  padding-right: 8px;
+  border-right: 2px solid #000;
+}
+
+.timeline-row {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  white-space: nowrap;
+}
+
+.timeline-check {
+  display: flex;
+  align-items: center;
+  gap: 4px;
+  cursor: pointer;
+}
+
+.anim-fps,
+.anim-opacity {
+  width: 56px;
+}
+
+.anim-status {
+  color: #8f9998;
+}
+
+.frame-strip {
+  flex: 1;
+  min-width: 0;
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  padding: 4px;
+  overflow-x: auto;
+  overflow-y: hidden;
+  background: var(--bg-darkest);
+  border: 1px solid var(--border);
+  border-radius: 3px;
+}
+
+.frame-thumb {
+  position: relative;
+  flex: 0 0 auto;
+  padding: 3px;
+  border: 2px solid #000;
+  border-radius: 3px;
+  background: var(--bg-control);
+  cursor: pointer;
+  user-select: none;
+}
+
+.frame-thumb.active {
+  outline: 2px solid #fff;
+  outline-offset: 1px;
+}
+
+.frame-thumb.dragging {
+  opacity: 0.5;
+}
+
+.frame-thumb.drop-target {
+  border-color: #fff;
+}
+
+.frame-thumb-canvas {
+  display: block;
+  width: 84px;
+  height: 64px;
+  image-rendering: pixelated;
+  background-color: #3a3d3c;
+  background-image: linear-gradient(45deg, #2a2c2b 25%, transparent 25%),
+    linear-gradient(-45deg, #2a2c2b 25%, transparent 25%),
+    linear-gradient(45deg, transparent 75%, #2a2c2b 75%),
+    linear-gradient(-45deg, transparent 75%, #2a2c2b 75%);
+  background-size: 12px 12px;
+  background-position: 0 0, 0 6px, 6px -6px, -6px 0;
+}
+
+.frame-number {
+  position: absolute;
+  right: 3px;
+  bottom: 2px;
+  padding: 0 3px;
+  font-size: 11px;
+  background: rgba(0, 0, 0, 0.6);
+  border-radius: 2px;
 }
 
 /* --- Color sample swatch near the cursor --- */

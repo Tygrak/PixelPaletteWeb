@@ -3,11 +3,6 @@
 A local-only, client-side TypeScript port of **PixelPalette** — a dithering and
 color-manipulation tool — plus an editing toolset (brushes, selections, layers).
 
-Everything runs in the browser. There is **no server-side component**: images
-are loaded from local files or the clipboard, processed on `<canvas>`, and
-saved back to your machine. `npm run build` produces static files that can be
-opened with no backend.
-
 ## Getting started
 
 ```bash
@@ -17,28 +12,7 @@ npm run build    # typecheck + static production build into dist/
 npm run preview  # serve the production build
 ```
 
-## Deploying to GitHub Pages
-
-The app is fully static and is published automatically by the workflow in
-`.github/workflows/deploy.yml` (build with `npm run build`, deploy `dist/`).
-
-One-time setup:
-
-1. Push this repository to GitHub (branch `main`).
-2. In the repository, go to **Settings → Pages** and set **Source** to
-   **GitHub Actions**.
-
-After that, every push to `main` (or a manual run of the workflow from the
-**Actions** tab) rebuilds and publishes the site at
-`https://<user>.github.io/<repo>/`.
-
-Assets are referenced with relative paths (`base: './'` in
-`vite.config.ts`), so the site works from any repository sub-path without
-further configuration.
-
----
-
-## Tool Shortcuts (requirements)
+## Tool Shortcuts
 
 | Tool                     | Key |
 | ------------------------ | --- |
@@ -58,25 +32,27 @@ further configuration.
 | Text Tool                | `T` |
 | Resize Image             | `R` |
 
-## Editing & Navigation (requirements)
+## Editing & Navigation
 
 | Action | Shortcut |
 | ------ | -------- |
 | Undo   | `Ctrl + Z` |
 | Redo   | `Ctrl + Shift + Z` (also `Ctrl + Y`) |
+| Save (opens the save dialog) | `Ctrl + S` |
 | Deselect selection | `Ctrl + D` |
 | Delete selection (to transparency) | `Delete` / `Backspace` |
 | Copy selection to clipboard | `Ctrl + C` |
 | Paste image as new layer     | `Ctrl + V` |
+| Play / pause animation (Animation mode) | `Space` |
 
-## Working with Layers (requirements)
+## Working with Layers
 
 | Action        | Shortcut          |
 | ------------- | ----------------- |
 | New Layer     | `Shift + Ctrl + N` |
 | Merge Down    | `Ctrl + E`         |
 
-## Tablet / Pen support (requirements)
+## Tablet / Pen support
 
 Drawing-tablet input is supported through the Pointer Events API:
 
@@ -102,7 +78,9 @@ Drawing-tablet input is supported through the Pointer Events API:
   transform).
 - Pasting an image from the clipboard with `Ctrl + V` adds it as a **new layer**
   (centered on the document); if no document is open it opens one.
-- Save the flattened document as `image.png`.
+- **Save File** opens a save dialog where you can set the file name and choose
+  what to export: the **current frame**, a **sprite sheet (grid)**, or
+  **separate images**. The chosen options (and file name) are remembered.
 - Restore the document back to the originally opened image.
 - Undo / redo history (up to 15 steps), via buttons and keyboard shortcuts.
 
@@ -185,6 +163,27 @@ an eyedropper to sample a color from the image. While sampling (the eyedropper
 tool, or holding `Alt` with the brush/bucket), a swatch showing the color under
 the cursor follows the pointer.
 
+### Animation
+
+Enable **Animation mode** in the Settings panel to show a timeline along the
+bottom of the window.
+
+- Each **frame** is a full document with its own layers (edit one frame at a
+  time; switching frames swaps the whole layer stack, and each frame keeps its
+  own undo history).
+- **+ Frame** adds a frame after the current one; it **duplicates the current
+  frame** by default (untick "Duplicate current" to add a blank frame).
+- **Delete** removes the current frame; drag thumbnails to **reorder** them.
+- **Play / Stop** (or press `Space`) plays the animation at the chosen **FPS**
+  (`1`–`60`). Editing is paused while the animation plays; `Esc` stops it.
+- **Onion skin** overlays the previous frame at a configurable **Opacity** on
+  the current frame, so you can line up motion. It is hidden during playback and
+  on the first frame.
+- The toolbar **Save File** button exports either the **current frame**, a
+  **sprite sheet (grid)** with a configurable column count, or **separate
+  images** (`name_001.png`, `name_002.png`, …). The file name and last used
+  options are remembered.
+
 ### Layers
 
 - Docked **Layers** panel: list of layers with per-layer visibility toggles and
@@ -254,7 +253,11 @@ the cursor follows the pointer.
 
 - Default canvas width/height used by **New File**.
 - Default background color for a new canvas.
-- Animation mode toggle (placeholder; not implemented yet).
+- **Blank (transparent) new image**: when ticked, **New File** starts with a
+  fully transparent layer instead of the background color.
+- **Image backdrop**: what is shown behind the image (visible through
+  transparent pixels) — a **checkerboard**, **pure black**, or **pure white**.
+- Animation mode toggle (shows the frame timeline at the bottom).
 - All settings are saved in the browser's `localStorage`, so they persist
   between sessions.
 

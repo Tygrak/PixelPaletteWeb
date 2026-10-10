@@ -98,11 +98,20 @@ export function polygonSelection(width: number, height: number, points: Point[])
   return mask;
 }
 
-function colorEquals(data: Uint8ClampedArray, pos: number, seed: RGB, tolerance: number): boolean {
+function colorEquals(
+  data: Uint8ClampedArray,
+  pos: number,
+  seed: RGB,
+  seedAlpha: number,
+  tolerance: number,
+): boolean {
   const dr = data[pos] - seed.r;
   const dg = data[pos + 1] - seed.g;
   const db = data[pos + 2] - seed.b;
-  return Math.sqrt(dr * dr + dg * dg + db * db) <= tolerance;
+  const da = data[pos + 3] - seedAlpha;
+  // Compare alpha too: transparent pixels share a zero RGB with black lines, so
+  // RGB-only matching would select through everything on transparent images.
+  return Math.sqrt(dr * dr + dg * dg + db * db + da * da) <= tolerance;
 }
 
 export function wandSelection(
@@ -118,6 +127,7 @@ export function wandSelection(
   }
   const seedPos = (seedX + seedY * width) * 4;
   const seed: RGB = { r: data[seedPos], g: data[seedPos + 1], b: data[seedPos + 2] };
+  const seedAlpha = data[seedPos + 3];
   const stack: number[] = [seedX + seedY * width];
   mask[seedX + seedY * width] = 1;
   while (stack.length > 0) {
@@ -134,7 +144,7 @@ export function wandSelection(
       if (neighbor < 0 || mask[neighbor]) {
         continue;
       }
-      if (colorEquals(data, neighbor * 4, seed, tolerance)) {
+      if (colorEquals(data, neighbor * 4, seed, seedAlpha, tolerance)) {
         mask[neighbor] = 1;
         stack.push(neighbor);
       }

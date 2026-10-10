@@ -12,12 +12,36 @@ interface Snapshot {
   height: number;
 }
 
+// One animation frame: an independent document (its layers + active layer)
+// with its own undo history, so switching frames preserves per-frame editing.
+export interface Frame {
+  id: number;
+  layers: Layer[];
+  activeIndex: number;
+  // Bumped whenever this frame's content changes, so views such as the onion
+  // skin can cache a frame's composite without recompositing every render.
+  contentRevision: number;
+  undo: Snapshot[];
+  redo: Snapshot[];
+}
+
+let nextFrameId = 1;
+
+function makeFrame(): Frame {
+  return { id: nextFrameId++, layers: [], activeIndex: 0, contentRevision: 0, undo: [], redo: [] };
+}
+
 type Listener = () => void;
 
-// Central editor state: layers, history, tools and selection.
+const HISTORY_LIMIT = 15;
+
+// Central editor state: frames, history, tools and selection.
 export class Store {
-  layers: Layer[] = [];
-  activeIndex = 0;
+  // The document is a list of frames; the current frame's layers are the live
+  // ones. Even without animation there is always a single frame.
+  private frames: Frame[] = [makeFrame()];
+  currentFrame = 0;
+
   width = 0;
   height = 0;
 
@@ -45,13 +69,29 @@ export class Store {
   selection: Selection | null = null;
 
   working = false;
+  playing = false;
   status = '';
   revision = 0;
 
-  private undoStack: Snapshot[] = [];
-  private redoStack: Snapshot[] = [];
   private compositeCache: ImageData | null = null;
   private listeners: Listener[] = [];
+
+  // Live document, backed by the current frame.
+  get layers(): Layer[] {
+    return this.frames[this.currentFrame].layers;
+  }
+
+  set layers(value: Layer[]) {
+    this.frames[this.currentFrame].layers = value;
+  }
+
+  get activeIndex(): number {
+    return this.frames[this.currentFrame].activeIndex;
+  }
+
+  set activeIndex(value: number) {
+    this.frames[this.currentFrame].activeIndex = value;
+  }
 
   onChange(listener: Listener): () => void {
     this.listeners.push(listener);
@@ -77,6 +117,7 @@ export class Store {
   notify(): void {
     this.invalidate();
     this.revision++;
+    this.frames[this.currentFrame].contentRevision++;
     this.emit();
   }
 
@@ -95,14 +136,14 @@ export class Store {
     return this.compositeCache;
   }
 
-  // --- History ---
+  // --- History (per frame) ---
 
   canUndo(): boolean {
-    return this.undoStack.length > 0;
+    return this.frames[this.currentFrame].undo.length > 0;
   }
 
   canRedo(): boolean {
-    return this.redoStack.length > 0;
+    return this.frames[this.currentFrame].redo.length > 0;
   }
 
   private snapshot(): Snapshot {
@@ -122,33 +163,43 @@ export class Store {
     this.selection = null;
   }
 
+  private clearAllHistory(): void {
+    for (const frame of this.frames) {
+      frame.undo = [];
+      frame.redo = [];
+    }
+  }
+
   pushHistory(): void {
     if (this.layers.length === 0) {
       return;
     }
-    this.undoStack.push(this.snapshot());
-    if (this.undoStack.length > 15) {
-      this.undoStack.shift();
+    const frame = this.frames[this.currentFrame];
+    frame.undo.push(this.snapshot());
+    if (frame.undo.length > HISTORY_LIMIT) {
+      frame.undo.shift();
     }
-    this.redoStack = [];
+    frame.redo = [];
   }
 
   undo(): void {
-    const snapshot = this.undoStack.pop();
+    const frame = this.frames[this.currentFrame];
+    const snapshot = frame.undo.pop();
     if (!snapshot) {
       return;
     }
-    this.redoStack.push(this.snapshot());
+    frame.redo.push(this.snapshot());
     this.applySnapshot(snapshot);
     this.notify();
   }
 
   redo(): void {
-    const snapshot = this.redoStack.pop();
+    const frame = this.frames[this.currentFrame];
+    const snapshot = frame.redo.pop();
     if (!snapshot) {
       return;
     }
-    this.undoStack.push(this.snapshot());
+    frame.undo.push(this.snapshot());
     this.applySnapshot(snapshot);
     this.notify();
   }
@@ -159,10 +210,11 @@ export class Store {
     this.width = img.width;
     this.height = img.height;
     this.initial = img;
-    this.layers = [createLayer(img.width, img.height, 'Background', cloneImage(img))];
-    this.activeIndex = 0;
-    this.undoStack = [];
-    this.redoStack = [];
+    const frame = makeFrame();
+    frame.layers = [createLayer(img.width, img.height, 'Background', cloneImage(img))];
+    frame.activeIndex = 0;
+    this.frames = [frame];
+    this.currentFrame = 0;
     this.selection = null;
     this.notify();
   }
@@ -206,20 +258,34 @@ export class Store {
     this.notify();
   }
 
-  // Resizes the whole document (every layer) to the given dimensions.
+  // History handling for a resize. With a single frame the resize stays
+  // undoable; with multiple frames the per-frame snapshots cannot describe the
+  // other frames, so history is cleared instead.
+  private prepareResize(): void {
+    if (this.frames.length > 1) {
+      this.clearAllHistory();
+    } else {
+      this.pushHistory();
+    }
+  }
+
+  // Resizes the whole document (every frame) to the given dimensions.
   resizeDocument(width: number, height: number): void {
     if (width < 1 || height < 1 || this.layers.length === 0) {
       return;
     }
-    this.pushHistory();
+    this.prepareResize();
     const scaleX = width / this.width;
     const scaleY = height / this.height;
-    this.layers = this.layers.map((layer) => ({
-      ...layer,
-      image: resizeImage(layer.image, width, height),
-      offsetX: Math.round(layer.offsetX * scaleX),
-      offsetY: Math.round(layer.offsetY * scaleY),
-    }));
+    for (const frame of this.frames) {
+      frame.layers = frame.layers.map((layer) => ({
+        ...layer,
+        image: resizeImage(layer.image, width, height),
+        offsetX: Math.round(layer.offsetX * scaleX),
+        offsetY: Math.round(layer.offsetY * scaleY),
+      }));
+      frame.contentRevision++;
+    }
     this.width = width;
     this.height = height;
     this.selection = null;
@@ -232,11 +298,14 @@ export class Store {
     if (width < 1 || height < 1 || this.layers.length === 0) {
       return;
     }
-    this.pushHistory();
-    this.layers = this.layers.map((layer) => ({
-      ...layer,
-      image: resizeCanvasImage(layer.image, width, height, left, top),
-    }));
+    this.prepareResize();
+    for (const frame of this.frames) {
+      frame.layers = frame.layers.map((layer) => ({
+        ...layer,
+        image: resizeCanvasImage(layer.image, width, height, left, top),
+      }));
+      frame.contentRevision++;
+    }
     this.width = width;
     this.height = height;
     this.selection = null;
@@ -247,11 +316,13 @@ export class Store {
     if (!this.initial) {
       return;
     }
-    this.pushHistory();
     this.width = this.initial.width;
     this.height = this.initial.height;
-    this.layers = [createLayer(this.width, this.height, 'Background', cloneImage(this.initial))];
-    this.activeIndex = 0;
+    const frame = makeFrame();
+    frame.layers = [createLayer(this.width, this.height, 'Background', cloneImage(this.initial))];
+    frame.activeIndex = 0;
+    this.frames = [frame];
+    this.currentFrame = 0;
     this.selection = null;
     this.notify();
   }
@@ -361,6 +432,107 @@ export class Store {
     const newActive = this.layers.findIndex((layer) => layer.id === activeId);
     this.activeIndex = newActive >= 0 ? newActive : 0;
     this.notify();
+  }
+
+  // --- Frames / animation ---
+
+  get frameCount(): number {
+    return this.frames.length;
+  }
+
+  frameId(index: number): number {
+    return this.frames[index]?.id ?? -1;
+  }
+
+  frameRevision(index: number): number {
+    return this.frames[index]?.contentRevision ?? -1;
+  }
+
+  // Flattened image of any frame (for thumbnails and export).
+  frameComposite(index: number): ImageData | null {
+    const frame = this.frames[index];
+    if (!frame || frame.layers.length === 0) {
+      return null;
+    }
+    return compositeLayers(frame.layers, this.width, this.height);
+  }
+
+  // Switches the edited frame.
+  selectFrame(index: number): void {
+    if (index < 0 || index >= this.frames.length || index === this.currentFrame) {
+      return;
+    }
+    this.currentFrame = index;
+    this.selection = null;
+    this.invalidate();
+    this.notify();
+  }
+
+  // Lightweight frame switch used during playback (keeps the selection).
+  previewFrame(index: number): void {
+    if (index < 0 || index >= this.frames.length || index === this.currentFrame) {
+      return;
+    }
+    this.currentFrame = index;
+    this.invalidate();
+    this.revision++;
+    this.emit();
+  }
+
+  // Adds a frame after the current one. By default it duplicates the current
+  // frame's layers; otherwise it starts blank.
+  addFrame(duplicate: boolean): void {
+    const frame = makeFrame();
+    if (duplicate) {
+      const source = this.frames[this.currentFrame];
+      frame.layers = source.layers.map((layer) => ({ ...layer, image: cloneImage(layer.image) }));
+      frame.activeIndex = Math.min(source.activeIndex, Math.max(0, frame.layers.length - 1));
+    } else if (this.width > 0 && this.height > 0) {
+      frame.layers = [createLayer(this.width, this.height, 'Layer 1')];
+      frame.activeIndex = 0;
+    }
+    const at = this.currentFrame + 1;
+    this.frames.splice(at, 0, frame);
+    this.currentFrame = at;
+    this.selection = null;
+    this.invalidate();
+    this.notify();
+  }
+
+  deleteFrame(index: number): void {
+    if (this.frames.length <= 1 || index < 0 || index >= this.frames.length) {
+      return;
+    }
+    this.frames.splice(index, 1);
+    if (index < this.currentFrame) {
+      this.currentFrame -= 1;
+    }
+    if (this.currentFrame >= this.frames.length) {
+      this.currentFrame = this.frames.length - 1;
+    }
+    this.selection = null;
+    this.invalidate();
+    this.notify();
+  }
+
+  moveFrame(from: number, to: number): void {
+    if (from < 0 || from >= this.frames.length) {
+      return;
+    }
+    const target = Math.max(0, Math.min(this.frames.length - 1, to));
+    if (from === target) {
+      return;
+    }
+    const [frame] = this.frames.splice(from, 1);
+    this.frames.splice(target, 0, frame);
+    this.currentFrame = target;
+    this.invalidate();
+    this.notify();
+  }
+
+  setPlaying(playing: boolean): void {
+    this.playing = playing;
+    this.emit();
   }
 
   // --- Tool state ---

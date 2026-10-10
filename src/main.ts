@@ -40,10 +40,14 @@ import { openDitherPanel } from './ui/ditherPanel';
 import { openEffectsPanel } from './ui/effectsPanel';
 import { openLayersPanel } from './ui/layersPanel';
 import { openPalettePanel } from './ui/palettePanel';
+import { openSaveDialog } from './ui/saveDialog';
 import { getActiveColorPicker, selectColorDialog } from './ui/selectColor';
 import { openSettingsPanel } from './ui/settingsPanel';
+import { createTimeline, Timeline } from './ui/timeline';
 
 const store = new Store();
+
+let timeline: Timeline | null = null;
 
 async function copyText(text: string): Promise<void> {
   try {
@@ -459,13 +463,15 @@ function newDocument(): void {
   commitFloating();
   const width = Math.max(1, store.settings.canvasWidth);
   const height = Math.max(1, store.settings.canvasHeight);
-  const background = hexToColor(store.settings.backgroundColor);
   const image = createEmptyImage(width, height);
-  for (let i = 0; i < width * height; i++) {
-    image.data[i * 4] = background.r;
-    image.data[i * 4 + 1] = background.g;
-    image.data[i * 4 + 2] = background.b;
-    image.data[i * 4 + 3] = 255;
+  if (!store.settings.blankNewImage) {
+    const background = hexToColor(store.settings.backgroundColor);
+    for (let i = 0; i < width * height; i++) {
+      image.data[i * 4] = background.r;
+      image.data[i * 4 + 1] = background.g;
+      image.data[i * 4 + 2] = background.b;
+      image.data[i * 4 + 3] = 255;
+    }
   }
   store.openImage(image);
   store.palette = BASE_COLORS.map((color) => ({ ...color }));
@@ -490,15 +496,21 @@ const openButton = h('button', {
     }
   },
 });
+function saveDocument(): void {
+  if (store.current && !store.working) {
+    timeline?.stopPlayback();
+    if (textEditing) {
+      commitText();
+    }
+    commitFloating();
+    openSaveDialog(store);
+  }
+}
+
 const saveButton = h('button', {
   class: 'btn toolbar-btn',
   text: 'Save File',
-  onclick: () => {
-    commitFloating();
-    if (store.current && !store.working) {
-      saveImageFile(store.current, 'image.png');
-    }
-  },
+  onclick: () => saveDocument(),
 });
 const undoButton = h('button', {
   class: 'btn toolbar-btn',
@@ -1000,6 +1012,29 @@ function getSelectionCanvas(mask: Uint8Array): HTMLCanvasElement {
   return element;
 }
 
+// --- Onion skin (previous frame shown under the current one) ---
+
+let cachedOnionKey = '';
+let cachedOnionCanvas: HTMLCanvasElement | null = null;
+
+function getOnionCanvas(index: number): HTMLCanvasElement | null {
+  const image = store.frameComposite(index);
+  if (!image) {
+    return null;
+  }
+  const key = `${store.frameId(index)}:${store.frameRevision(index)}`;
+  if (key === cachedOnionKey && cachedOnionCanvas) {
+    return cachedOnionCanvas;
+  }
+  const element = document.createElement('canvas');
+  element.width = image.width;
+  element.height = image.height;
+  element.getContext('2d')!.putImageData(image, 0, 0);
+  cachedOnionKey = key;
+  cachedOnionCanvas = element;
+  return element;
+}
+
 let hoverPoint: { x: number; y: number } | null = null;
 
 // In-progress text (Text tool): typed directly on the canvas, committed on Enter.
@@ -1079,6 +1114,21 @@ function redrawOverlay(): void {
     return;
   }
   context.clearRect(0, 0, overlayCanvas.width, overlayCanvas.height);
+  if (
+    store.settings.onionSkin &&
+    store.settings.animationMode &&
+    !store.playing &&
+    store.currentFrame > 0
+  ) {
+    const skin = getOnionCanvas(store.currentFrame - 1);
+    if (skin) {
+      context.save();
+      context.globalAlpha = clamp(store.settings.onionOpacity, 0, 1);
+      context.imageSmoothingEnabled = false;
+      context.drawImage(skin, 0, 0);
+      context.restore();
+    }
+  }
   if (floating) {
     drawFloatingToContext(context, floating);
   } else if (store.selection && store.width > 0) {
@@ -1289,7 +1339,7 @@ function bakeActiveLayerOffset(): void {
 
 canvas.addEventListener('pointerdown', (event) => {
   const img = store.current;
-  if (!img) {
+  if (!img || store.playing) {
     return;
   }
   canvas.setPointerCapture(event.pointerId);
@@ -1484,7 +1534,7 @@ canvas.addEventListener('pointerdown', (event) => {
 
 canvas.addEventListener('pointermove', (event) => {
   const img = store.current;
-  if (!img) {
+  if (!img || store.playing) {
     return;
   }
   const point = toImagePoint(event.clientX, event.clientY);
@@ -1668,6 +1718,9 @@ function updateHoverCursor(x: number, y: number): void {
 }
 
 function endPointer(event: PointerEvent): void {
+  if (store.playing) {
+    return;
+  }
   if (canvas.hasPointerCapture(event.pointerId)) {
     canvas.releasePointerCapture(event.pointerId);
   }
@@ -1883,9 +1936,40 @@ window.addEventListener('keydown', (event) => {
     target !== null && (target.tagName === 'INPUT' || target.tagName === 'TEXTAREA' || target.isContentEditable);
   const ctrl = event.ctrlKey || event.metaKey;
 
+  // Ignore auto-repeat for Space so holding it toggles playback once instead of
+  // flickering on/off (but let it through when typing in a field).
+  if (event.repeat && event.key === ' ' && !typing) {
+    event.preventDefault();
+    return;
+  }
+
+  if (store.playing) {
+    // While the animation is playing, only playback controls are available.
+    if (event.key === ' ') {
+      event.preventDefault();
+      timeline?.togglePlay();
+      return;
+    }
+    if (event.key === 'Escape') {
+      event.preventDefault();
+      timeline?.stopPlayback();
+      return;
+    }
+    if (ctrl && event.key.toLowerCase() === 's') {
+      event.preventDefault();
+      saveDocument();
+      return;
+    }
+    return;
+  }
+
   if (textEditing) {
     const editing = textEditing;
     if (ctrl) {
+      if (event.key.toLowerCase() === 's') {
+        event.preventDefault();
+        saveDocument();
+      }
       return;
     }
     if (event.key === 'Escape') {
@@ -1913,6 +1997,12 @@ window.addEventListener('keydown', (event) => {
     return;
   }
 
+  if (ctrl && event.key.toLowerCase() === 's') {
+    // Match the toolbar Save button instead of the browser's "Save page".
+    event.preventDefault();
+    saveDocument();
+    return;
+  }
   if (ctrl && event.key.toLowerCase() === 'z') {
     if (typing) {
       return;
@@ -1998,8 +2088,12 @@ window.addEventListener('keydown', (event) => {
     return;
   }
   if (event.key === ' ') {
-    spaceHeld = true;
     event.preventDefault();
+    if (store.settings.animationMode) {
+      timeline?.togglePlay();
+    } else {
+      spaceHeld = true;
+    }
     return;
   }
   if (event.key === '[') {
@@ -2121,6 +2215,11 @@ function render(): void {
     canvasPlaceholder.classList.remove('hidden');
   }
 
+  const backdrop = store.settings.canvasBackdrop;
+  canvasStack.classList.toggle('backdrop-checker', backdrop === 'checker');
+  canvasStack.classList.toggle('backdrop-black', backdrop === 'black');
+  canvasStack.classList.toggle('backdrop-white', backdrop === 'white');
+
   applyCanvasLayout();
   redrawOverlay();
 
@@ -2205,7 +2304,21 @@ function render(): void {
   newButton.disabled = store.working;
   saveButton.disabled = store.working || store.current === null;
   statusText.textContent = store.status;
+
+  timeline?.sync();
 }
+
+function prepareFrameChange(): void {
+  if (textEditing) {
+    commitText();
+  }
+  if (floating) {
+    commitFloating();
+  }
+}
+
+timeline = createTimeline(ctx, applyCanvasLayout, prepareFrameChange);
+app.append(timeline.root);
 
 store.onChange(render);
 render();

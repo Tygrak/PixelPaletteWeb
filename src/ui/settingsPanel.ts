@@ -1,6 +1,7 @@
 import { colorToHex, hexToColor } from '../color';
 import { AppContext } from '../context';
 import { createDockPanel, DockPanel, h, row } from '../dom';
+import type { CanvasBackdrop } from '../settings';
 
 export function openSettingsPanel(ctx: AppContext, onClose?: () => void): DockPanel {
   const { store } = ctx;
@@ -46,14 +47,36 @@ export function openSettingsPanel(ctx: AppContext, onClose?: () => void): DockPa
     store.updateSettings({ animationMode: animationCheckbox.checked }),
   );
 
+  const blankCheckbox = document.createElement('input');
+  blankCheckbox.type = 'checkbox';
+  blankCheckbox.checked = store.settings.blankNewImage;
+  blankCheckbox.addEventListener('change', () =>
+    store.updateSettings({ blankNewImage: blankCheckbox.checked }),
+  );
+
+  const backdropSelect = h('select', { class: 'select' }, [
+    h('option', { value: 'checker', text: 'Checkerboard' }),
+    h('option', { value: 'black', text: 'Pure black' }),
+    h('option', { value: 'white', text: 'Pure white' }),
+  ]);
+  backdropSelect.value = store.settings.canvasBackdrop;
+  backdropSelect.addEventListener('change', () =>
+    store.updateSettings({ canvasBackdrop: backdropSelect.value as CanvasBackdrop }),
+  );
+
   panel.body.append(
     h('div', { class: 'tab-content' }, [
       row('Default canvas width:', widthInput),
       row('Default canvas height:', heightInput),
       row('Default background:', swatch, pickButton),
+      row('Blank (transparent) new image:', blankCheckbox),
+      row('Image backdrop:', backdropSelect),
       row('Animation mode:', animationCheckbox),
+      h('div', {
+        class: 'dialog-hint',
+        text: 'Animation mode shows a timeline at the bottom where you can add frames, reorder them and play the animation.',
+      }),
       h('div', { class: 'dialog-hint', text: 'These settings are saved in your browser.' }),
-      h('div', { class: 'dialog-hint', text: 'Animation mode is not implemented yet.' }),
     ]),
   );
 
@@ -66,6 +89,10 @@ export function openSettingsPanel(ctx: AppContext, onClose?: () => void): DockPa
     }
     swatch.style.background = store.settings.backgroundColor;
     animationCheckbox.checked = store.settings.animationMode;
+    backdropSelect.value = store.settings.canvasBackdrop;
+    blankCheckbox.checked = store.settings.blankNewImage;
+    pickButton.disabled = store.settings.blankNewImage;
+    swatch.style.opacity = store.settings.blankNewImage ? '0.4' : '1';
   };
   sync();
   unlisten = store.onChange(sync);
