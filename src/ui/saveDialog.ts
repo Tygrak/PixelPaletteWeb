@@ -27,6 +27,7 @@ export function openSaveDialog(store: Store): void {
     h('option', { value: 'grid', text: 'Sprite sheet (grid)' }),
     h('option', { value: 'separate', text: 'Separate images' }),
   ]);
+  formatSelect.title = 'What to export: the current frame, a combined sprite sheet, or one file per frame.';
   // Grid/separate only make sense with more than one frame.
   (formatSelect.children[1] as HTMLOptionElement).disabled = !multiFrame;
   (formatSelect.children[2] as HTMLOptionElement).disabled = !multiFrame;
@@ -41,9 +42,11 @@ export function openSaveDialog(store: Store): void {
   columnsInput.min = '1';
   columnsInput.max = String(Math.max(1, frameCount));
   columnsInput.style.width = '80px';
+  columnsInput.title = 'Number of columns used to arrange frames in the sprite sheet.';
 
   const nameInput = h('input', { type: 'text', value: store.settings.saveFileName });
   nameInput.style.width = '180px';
+  nameInput.title = 'Base file name used for the exported file(s), without the extension.';
 
   const columnsRow = h('div', { class: 'row' }, [
     h('span', { class: 'row-label', text: 'Columns' }),
@@ -61,8 +64,8 @@ export function openSaveDialog(store: Store): void {
       const cols = Math.max(1, parseInt(columnsInput.value, 10) || 1);
       hint.textContent =
         format === 'grid'
-          ? `${frameCount} frame(s) at ${frameW}×${frameH} · ${cols} column(s) · ${name}.png`
-          : `Current frame at ${frameW}×${frameH} · ${name}.png`;
+          ? `${frameCount} frame(s) at ${frameW}×${frameH}, ${cols} column(s), ${name}.png`
+          : `Current frame at ${frameW}×${frameH}, ${name}.png`;
     }
   };
 

@@ -1,6 +1,6 @@
 import { colorToHex, colorToHsl, distinctColors, hexToColor, hslToColor, RGB } from '../color';
 import { AppContext } from '../context';
-import { button, colorSwatch, createDockPanel, createTabs, DockPanel, h, num, numeric, row } from '../dom';
+import { button, colorSwatch, createDockPanel, createTabs, DockPanel, h, num, numeric, rowHint } from '../dom';
 import { loadTextFile, saveTextFile } from '../files';
 import { fakeDuoTone, kMeans, medianCut, sectorsHighMidLow, sortColors } from '../palette';
 
@@ -60,7 +60,7 @@ export function openPalettePanel(ctx: AppContext, onClose?: () => void): DockPan
   // --- Median Cut tab ---
   const medianCutAmount = numeric(8, { min: 2, width: 200 });
   const medianCutTab = h('div', { class: 'tab-content' }, [
-    row('Result color amount:', medianCutAmount),
+    rowHint('Result color amount:', 'Number of colors the palette is reduced to.', medianCutAmount),
     h('div', { class: 'button-row' }, [
       button('Preview Median Cut', async () => {
         if (!store.activeImage) {
@@ -88,8 +88,8 @@ export function openPalettePanel(ctx: AppContext, onClose?: () => void): DockPan
   const kMeansAmount = numeric(8, { min: 2, width: 200 });
   const kMeansSteps = numeric(10, { min: 1, width: 200 });
   const kMeansTab = h('div', { class: 'tab-content' }, [
-    row('Result color amount:', kMeansAmount),
-    row('Max steps:', kMeansSteps),
+    rowHint('Result color amount:', 'Number of colors to cluster the image into.', kMeansAmount),
+    rowHint('Max steps:', 'Maximum number of refinement iterations for the clustering.', kMeansSteps),
     h('div', { class: 'button-row' }, [
       button('Generate K-Means Clustering Palette', async () => {
         if (!store.activeImage) {
@@ -108,7 +108,7 @@ export function openPalettePanel(ctx: AppContext, onClose?: () => void): DockPan
   // --- HML tab ---
   const hmlAmount = numeric(8, { min: 2, width: 200 });
   const hmlTab = h('div', { class: 'tab-content' }, [
-    row('Result color amount:', hmlAmount),
+    rowHint('Result color amount:', 'Number of colors generated from the hue sectors.', hmlAmount),
     h('div', { class: 'button-row' }, [
       button('Generate Sectors High Mid Low Palette', async () => {
         if (!store.activeImage) {
@@ -128,9 +128,9 @@ export function openPalettePanel(ctx: AppContext, onClose?: () => void): DockPan
   const duoToneHue = numeric(0, { min: 0, max: 360, width: 200 });
   const duoToneSaturation = numeric(0.5, { min: 0, max: 1, step: 0.01, width: 200 });
   const duoToneTab = h('div', { class: 'tab-content' }, [
-    row('Result color amount:', duoToneAmount),
-    row('Color hue (HSL):', duoToneHue),
-    row('Color saturation (HSL):', duoToneSaturation),
+    rowHint('Result color amount:', 'Number of shades generated between the two tones.', duoToneAmount),
+    rowHint('Color hue (HSL):', 'Hue of the color the palette blends toward (0-360).', duoToneHue),
+    rowHint('Color saturation (HSL):', 'Saturation of the color the palette blends toward (0-1).', duoToneSaturation),
     h('div', { class: 'button-row' }, [
       button('Pick Color', async () => {
         const current = hslToColor({ h: num(duoToneHue), s: num(duoToneSaturation), l: 0.5 });
@@ -169,7 +169,7 @@ export function openPalettePanel(ctx: AppContext, onClose?: () => void): DockPan
   const getSeparator = (): string => separatorInput.value.replace(/\\n/g, '\n');
 
   const importExportTab = h('div', { class: 'tab-content' }, [
-    row('Color separator:', separatorInput),
+    rowHint('Color separator:', 'Text placed between colors when importing or exporting a palette.', separatorInput),
     h('div', { class: 'button-row' }, [
       button('Import Palette', async () => {
         const file = await loadTextFile();

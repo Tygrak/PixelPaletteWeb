@@ -9,7 +9,7 @@ import {
   h,
   num,
   numeric,
-  row,
+  rowHint,
 } from '../dom';
 import { detectEdges } from '../effects';
 
@@ -57,12 +57,12 @@ export function openEffectsPanel(ctx: AppContext, onClose?: () => void): DockPan
   });
 
   const edgeTab = h('div', { class: 'tab-content' }, [
-    row('Edge width (px):', widthInput),
-    row('Edge color:', swatch, colorHex, pickColorButton),
-    row('Auto thresholds:', autoCheckbox),
-    row('Low threshold:', lowInput),
-    row('High threshold:', highInput),
-    row('Background:', backgroundSelect),
+    rowHint('Edge width (px):', 'Thickness of the detected edge lines, in pixels.', widthInput),
+    rowHint('Edge color:', 'Color used to draw the detected edges.', swatch, colorHex, pickColorButton),
+    rowHint('Auto thresholds:', 'Choose the low and high thresholds automatically from the image.', autoCheckbox),
+    rowHint('Low threshold:', 'Lower gradient threshold. Weaker edges below this are ignored.', lowInput),
+    rowHint('High threshold:', 'Upper gradient threshold. Only stronger edges are kept.', highInput),
+    rowHint('Background:', 'What to fill the non-edge areas with.', backgroundSelect),
     h('div', { class: 'button-row' }, [
       button('Detect Edges', async () => {
         if (!store.activeImage) {

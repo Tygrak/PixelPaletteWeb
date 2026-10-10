@@ -1,6 +1,6 @@
 import { colorToHex, hexToColor } from '../color';
 import { AppContext } from '../context';
-import { createDockPanel, DockPanel, h, row } from '../dom';
+import { createDockPanel, DockPanel, h, rowHint } from '../dom';
 import type { CanvasBackdrop } from '../settings';
 
 export function openSettingsPanel(ctx: AppContext, onClose?: () => void): DockPanel {
@@ -66,17 +66,25 @@ export function openSettingsPanel(ctx: AppContext, onClose?: () => void): DockPa
 
   panel.body.append(
     h('div', { class: 'tab-content' }, [
-      row('Default canvas width:', widthInput),
-      row('Default canvas height:', heightInput),
-      row('Default background:', swatch, pickButton),
-      row('Blank (transparent) new image:', blankCheckbox),
-      row('Image backdrop:', backdropSelect),
-      row('Animation mode:', animationCheckbox),
-      h('div', {
-        class: 'dialog-hint',
-        text: 'Animation mode shows a timeline at the bottom where you can add frames, reorder them and play the animation.',
-      }),
-      h('div', { class: 'dialog-hint', text: 'These settings are saved in your browser.' }),
+      rowHint('Default canvas width:', 'Width in pixels used for new files.', widthInput),
+      rowHint('Default canvas height:', 'Height in pixels used for new files.', heightInput),
+      rowHint(
+        'Default background:',
+        'Background color used for new files unless "Blank new image" is enabled.',
+        swatch,
+        pickButton,
+      ),
+      rowHint(
+        'Blank (transparent) new image:',
+        'Start new files fully transparent instead of filling them with the background color.',
+        blankCheckbox,
+      ),
+      rowHint('Image backdrop:', 'What is shown behind transparent pixels on the canvas.', backdropSelect),
+      rowHint(
+        'Animation mode:',
+        'Show the timeline at the bottom to add frames, reorder them and play the animation.',
+        animationCheckbox,
+      ),
     ]),
   );
 

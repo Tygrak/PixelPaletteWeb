@@ -47,7 +47,7 @@ export function openDitherPanel(ctx: AppContext, onClose?: () => void): DockPane
   // --- Random ---
   const randomBias = numeric(10, { max: 13, width: 100 });
   const randomTab = h('div', { class: 'tab-content' }, [
-    h('div', { class: 'row' }, [
+    h('div', { class: 'row', title: 'Strength of the random noise added before choosing a palette color.' }, [
       h('span', { class: 'row-label', text: 'Random bias:' }),
       h('div', { class: 'row-controls' }, [randomBias]),
     ]),
@@ -76,7 +76,7 @@ export function openDitherPanel(ctx: AppContext, onClose?: () => void): DockPane
     }
   }
   const orderedTab = h('div', { class: 'tab-content' }, [
-    h('div', { class: 'row' }, [
+    h('div', { class: 'row', title: 'Threshold values for the ordered (Bayer) dither pattern.' }, [
       h('span', { class: 'row-label', text: 'Dither matrix:' }),
       h('div', { class: 'row-controls' }, [matrixGrid(4, orderedCells)]),
     ]),
@@ -111,7 +111,7 @@ export function openDitherPanel(ctx: AppContext, onClose?: () => void): DockPane
     },
   ];
   const floSteinTab = h('div', { class: 'tab-content' }, [
-    h('div', { class: 'row' }, [
+    h('div', { class: 'row', title: 'How quantization error is spread to neighbouring pixels.' }, [
       h('span', { class: 'row-label', text: 'Error Diffusion Matrix:' }),
       h('div', { class: 'row-controls' }, [matrixGrid(3, fsCells)]),
     ]),
@@ -163,7 +163,7 @@ export function openDitherPanel(ctx: AppContext, onClose?: () => void): DockPane
     },
   ];
   const minAvgTab = h('div', { class: 'tab-content' }, [
-    h('div', { class: 'row' }, [
+    h('div', { class: 'row', title: 'How quantization error is spread to neighbouring pixels.' }, [
       h('span', { class: 'row-label', text: 'Error Diffusion Matrix:' }),
       h('div', { class: 'row-controls' }, [matrixGrid(5, minAvgCells)]),
     ]),

@@ -293,7 +293,7 @@ const overlayCanvas = h('canvas', { class: 'overlay-canvas' });
 const canvasStack = h('div', { class: 'canvas-stack' }, [canvas, overlayCanvas]);
 const canvasPlaceholder = h('div', {
   class: 'placeholder',
-  text: 'Open an image to begin, or press Ctrl+V to paste one',
+  text: 'Open, paste or create a new file to begin',
 });
 const canvasArea = h('div', { class: 'canvas-area' }, [canvasStack, canvasPlaceholder]);
 const resizePreview = h('div', { class: 'resize-preview' });
@@ -519,11 +519,13 @@ function saveDocument(): void {
 const saveButton = h('button', {
   class: 'btn toolbar-btn',
   text: 'Save File',
+  title: 'Save File (Ctrl+S)',
   onclick: () => saveDocument(),
 });
 const undoButton = h('button', {
   class: 'btn toolbar-btn',
   text: 'Undo',
+  title: 'Undo (Ctrl+Z)',
   onclick: () => {
     if (!store.working) {
       if (floating) {
@@ -537,6 +539,7 @@ const undoButton = h('button', {
 const redoButton = h('button', {
   class: 'btn toolbar-btn',
   text: 'Redo',
+  title: 'Redo (Ctrl+Y)',
   onclick: () => {
     if (!store.working && !floating) {
       store.redo();
@@ -649,9 +652,11 @@ function readNumber(input: HTMLInputElement): number {
 }
 
 const brushSizeInput = numberInput(store.brushSize, 1, 500, 1, () => store.setBrushSize(readNumber(brushSizeInput)));
+brushSizeInput.title = 'Brush size in pixels.';
 const brushOpacityInput = numberInput(Math.round(store.brushOpacity * 100), 0, 100, 1, () =>
   store.setBrushOpacity(clamp(readNumber(brushOpacityInput) / 100, 0, 1)),
 );
+brushOpacityInput.title = 'Brush opacity, from 0 to 100%.';
 const brushSwatch = h('span', { class: 'palette-swatch small' });
 const pickForegroundButton = h('button', {
   class: 'btn',
@@ -667,6 +672,7 @@ function createBrushSelect(): HTMLSelectElement {
     select.append(h('option', { value: brush.id, text: brush.label }));
   }
   select.value = store.brushId;
+  select.title = 'Brush tip shape and texture.';
   select.addEventListener('change', () => store.setBrush(select.value));
   return select;
 }
@@ -686,12 +692,15 @@ const brushSection = h('div', { class: 'options-section' }, [
 // Palette knife controls edit the same size/opacity state as the brush, but
 // live in their own inputs so they can be shown independently.
 const knifeSizeInput = numberInput(store.brushSize, 1, 500, 1, () => store.setBrushSize(readNumber(knifeSizeInput)));
+knifeSizeInput.title = 'Knife size in pixels.';
 const knifeStrengthInput = numberInput(Math.round(store.brushOpacity * 100), 0, 100, 1, () =>
   store.setBrushOpacity(clamp(readNumber(knifeStrengthInput) / 100, 0, 1)),
 );
+knifeStrengthInput.title = 'How strongly the knife lays the picked-up paint back down.';
 const knifeSmearInput = numberInput(Math.round(store.knifeSmear * 100), 0, 100, 1, () =>
   store.setKnifeSmear(clamp(readNumber(knifeSmearInput) / 100, 0, 1)),
 );
+knifeSmearInput.title = 'How far behind the cursor the knife samples paint to smear along the stroke.';
 const knifeSelect = createBrushSelect();
 const knifeSection = h('div', { class: 'options-section' }, [
   h('span', { class: 'row-label', text: 'Brush' }),
@@ -707,6 +716,7 @@ const knifeSection = h('div', { class: 'options-section' }, [
 const wandToleranceInput = numberInput(store.wandTolerance, 0, 255, 1, () =>
   store.setWandTolerance(readNumber(wandToleranceInput)),
 );
+wandToleranceInput.title = 'How different a color can be and still be selected by the magic wand.';
 const wandSection = h('div', { class: 'options-section' }, [
   h('span', { class: 'row-label', text: 'Tolerance' }),
   wandToleranceInput,
@@ -715,6 +725,7 @@ const wandSection = h('div', { class: 'options-section' }, [
 const fillToleranceInput = numberInput(store.fillTolerance, 0, 255, 1, () =>
   store.setFillTolerance(readNumber(fillToleranceInput)),
 );
+fillToleranceInput.title = 'How different a color can be and still be filled by the paint bucket.';
 const bucketSection = h('div', { class: 'options-section' }, [
   h('span', { class: 'row-label', text: 'Tolerance' }),
   fillToleranceInput,
@@ -756,9 +767,12 @@ const zoomSection = h('div', { class: 'options-section' }, [
 const resizeLock = document.createElement('input');
 resizeLock.type = 'checkbox';
 resizeLock.checked = true;
+resizeLock.title = 'Keep the current aspect ratio while resizing.';
 let resizeRatio = 1;
 const resizeWidthInput = numberInput(store.width || 512, 1, 100000, 1, () => undefined);
+resizeWidthInput.title = 'Target document width in pixels.';
 const resizeHeightInput = numberInput(store.height || 512, 1, 100000, 1, () => undefined);
+resizeHeightInput.title = 'Target document height in pixels.';
 resizeWidthInput.addEventListener('input', () => {
   if (resizeLock.checked) {
     const ratio = resizeRatio || 1;
@@ -776,6 +790,7 @@ resizeLock.addEventListener('change', () => {
 });
 const resizeScaleCheckbox = document.createElement('input');
 resizeScaleCheckbox.type = 'checkbox';
+resizeScaleCheckbox.title = 'Scale the image content with the canvas. When off, only the canvas size changes.';
 
 // Applies the width/height fields (used by both Enter/blur and the button).
 function applyResizeFromInputs(): void {
@@ -819,6 +834,7 @@ const hintLabel = h('span', { class: 'row-label' });
 const hintSection = h('div', { class: 'options-section' }, [hintLabel]);
 
 const textSizeInput = numberInput(store.textSize, 1, 500, 1, () => store.setTextSize(readNumber(textSizeInput)));
+textSizeInput.title = 'Text size in pixels.';
 
 const textFontSelect = h('select', { class: 'select' });
 for (const [value, label] of [
@@ -831,16 +847,19 @@ for (const [value, label] of [
   textFontSelect.append(h('option', { value, text: label }));
 }
 textFontSelect.value = store.textFont;
+textFontSelect.title = 'Font family for the text tool.';
 textFontSelect.addEventListener('change', () => store.setTextFont(textFontSelect.value));
 
 const textBoldCheckbox = document.createElement('input');
 textBoldCheckbox.type = 'checkbox';
 textBoldCheckbox.checked = store.textBold;
+textBoldCheckbox.title = 'Render the text in bold.';
 textBoldCheckbox.addEventListener('change', () => store.setTextBold(textBoldCheckbox.checked));
 
 const textItalicCheckbox = document.createElement('input');
 textItalicCheckbox.type = 'checkbox';
 textItalicCheckbox.checked = store.textItalic;
+textItalicCheckbox.title = 'Render the text in italics.';
 textItalicCheckbox.addEventListener('change', () => store.setTextItalic(textItalicCheckbox.checked));
 
 const textSwatch = h('span', { class: 'palette-swatch small' });
@@ -2370,10 +2389,7 @@ function render(): void {
   paletteSection.style.display = showPalette ? 'flex' : 'none';
   hintSection.style.display =
     showBrush || showKnife || showBucket || showWand || showZoom || showResize || showText ? 'none' : 'flex';
-  hintLabel.textContent =
-    tool === 'move'
-      ? 'Move: drag selection to move · handles to scale · just outside corners to rotate'
-      : `Tool: ${tool} · Space+drag to pan · Ctrl+scroll to zoom`;
+  hintLabel.textContent = `${tool[0].toUpperCase()+tool.slice(1)}`;
 
   undoButton.disabled = store.working || (!store.canUndo() && !floating);
   redoButton.disabled = store.working || !store.canRedo() || floating !== null;

@@ -42,16 +42,13 @@ export function createTimeline(ctx: AppContext, onLayout: () => void, prepare: (
   const fpsInput = h('input', { type: 'number', class: 'anim-fps', value: '12' });
   fpsInput.min = String(MIN_FPS);
   fpsInput.max = String(MAX_FPS);
+  fpsInput.title = 'Playback speed in frames per second.';
   fpsInput.addEventListener('change', () => {
     fpsInput.value = String(currentFps());
     if (playing) {
       restartTimer();
     }
   });
-
-  const duplicateCheckbox = document.createElement('input');
-  duplicateCheckbox.type = 'checkbox';
-  duplicateCheckbox.checked = true;
 
   const onionCheckbox = document.createElement('input');
   onionCheckbox.type = 'checkbox';
@@ -67,20 +64,31 @@ export function createTimeline(ctx: AppContext, onLayout: () => void, prepare: (
   });
   onionOpacityInput.min = '0';
   onionOpacityInput.max = '100';
+  onionOpacityInput.title = 'Opacity of the onion skin overlay (0-100%).';
   onionOpacityInput.addEventListener('input', () =>
     store.updateSettings({
       onionOpacity: Math.max(0, Math.min(100, parseInt(onionOpacityInput.value, 10) || 0)) / 100,
     }),
   );
 
-  const addButton = h('button', {
+  const duplicateButton = h('button', {
     class: 'btn anim-control',
-    text: '+ Frame',
-    title: 'Add a frame after the current one',
+    text: 'Duplicate Frame',
+    title: 'Add a copy of the current frame after it',
     onclick: () => {
       stopPlayback();
       prepare();
-      store.addFrame(duplicateCheckbox.checked);
+      store.addFrame(true);
+    },
+  });
+  const newFrameButton = h('button', {
+    class: 'btn anim-control',
+    text: 'New Frame',
+    title: 'Add a blank frame after the current one',
+    onclick: () => {
+      stopPlayback();
+      prepare();
+      store.addFrame(false);
     },
   });
   const deleteButton = h('button', {
@@ -104,11 +112,8 @@ export function createTimeline(ctx: AppContext, onLayout: () => void, prepare: (
       frameLabel,
     ]),
     h('div', { class: 'timeline-row' }, [
-      addButton,
-      h('label', { class: 'timeline-check', title: 'New frames copy the current frame' }, [
-        duplicateCheckbox,
-        h('span', { text: 'Duplicate current' }),
-      ]),
+      duplicateButton,
+      newFrameButton,
       deleteButton,
     ]),
     h('div', { class: 'timeline-row' }, [

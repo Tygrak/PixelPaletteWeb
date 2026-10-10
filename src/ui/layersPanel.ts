@@ -214,16 +214,12 @@ export function openLayersPanel(ctx: AppContext, onClose?: () => void): DockPane
     h('div', { class: 'tab-content' }, [
       h('div', { class: 'fill' }, [list]),
       h('div', { class: 'button-row' }, [
-        button('New Layer', () => store.addLayer()),
-        button('Duplicate Layer', () => store.duplicateLayer()),
+        button('New Layer', () => store.addLayer(), 'New Layer (Ctrl+N)'),
+        button('Duplicate Layer', () => store.duplicateLayer(), 'Duplicate Layer (Ctrl+D)'),
         button('Rename Layer', () => renameActive()),
-        button('Merge Down', () => store.mergeLayers()),
+        button('Merge Down', () => store.mergeLayers(), 'Merge Down (Ctrl+E)'),
         button('Delete Layer', () => store.deleteLayer()),
-      ]),
-      h('div', {
-        class: 'dialog-hint',
-        text: 'Double-click a layer to rename · drag to reorder · Ctrl+N new · Ctrl+D duplicate · Ctrl+E merge down',
-      }),
+      ])
     ]),
   );
 

@@ -67,8 +67,20 @@ export function row(label: string, ...controls: Child[]): HTMLElement {
   ]);
 }
 
-export function button(label: string, onClick: () => void): HTMLButtonElement {
-  return h('button', { class: 'btn', text: label, onclick: onClick });
+// A labelled row that shows helper text when hovered. The title is set on the
+// row so it also appears while hovering the label or the control itself.
+export function rowHint(label: string, hintText: string, ...controls: Child[]): HTMLElement {
+  const element = row(label, ...controls);
+  element.title = hintText;
+  return element;
+}
+
+export function button(label: string, onClick: () => void, title?: string): HTMLButtonElement {
+  const element = h('button', { class: 'btn', text: label, onclick: onClick });
+  if (title) {
+    element.title = title;
+  }
+  return element;
 }
 
 export interface Dialog {

@@ -1,6 +1,6 @@
 import { blurImage, shiftHsl } from '../adjust';
 import { AppContext } from '../context';
-import { button, createDockPanel, createTabs, DockPanel, h, num, numeric, row } from '../dom';
+import { button, createDockPanel, createTabs, DockPanel, h, num, numeric, rowHint } from '../dom';
 import { calculateAverageBrightnessError, calculateAverageError, flipImage, resizeImage, rotateImage } from '../image';
 
 export function openAdjustmentsPanel(ctx: AppContext, onClose?: () => void): DockPanel {
@@ -44,9 +44,9 @@ export function openAdjustmentsPanel(ctx: AppContext, onClose?: () => void): Doc
   lockRatio.addEventListener('click', updateRatio);
 
   const transformTab = h('div', { class: 'tab-content' }, [
-    row('New width:', widthInput),
-    row('New height:', heightInput),
-    row('Lock Ratio:', lockRatio),
+    rowHint('New width:', 'Target width of the resized image, in pixels.', widthInput),
+    rowHint('New height:', 'Target height of the resized image, in pixels.', heightInput),
+    rowHint('Lock Ratio:', 'Keep the current width-to-height ratio while resizing.', lockRatio),
     h('div', { class: 'button-row' }, [
       button('Resize', async () => {
         const width = Math.max(1, Math.trunc(num(widthInput)));
@@ -76,9 +76,9 @@ export function openAdjustmentsPanel(ctx: AppContext, onClose?: () => void): Doc
   const saturationInput = numeric(0, { width: 200 });
   const lightnessInput = numeric(0, { width: 200 });
   const hslTab = h('div', { class: 'tab-content' }, [
-    row('Hue shift (° change):', hueInput),
-    row('Saturation (% change):', saturationInput),
-    row('Lightness (% change):', lightnessInput),
+    rowHint('Hue shift (° change):', 'Degrees to rotate every hue around the color wheel.', hueInput),
+    rowHint('Saturation (% change):', 'Percentage to increase or decrease color saturation.', saturationInput),
+    rowHint('Lightness (% change):', 'Percentage to increase or decrease brightness.', lightnessInput),
     h('div', { class: 'button-row' }, [
       button('Shift HSL', () =>
         apply('Adjusting image', () =>
@@ -91,7 +91,7 @@ export function openAdjustmentsPanel(ctx: AppContext, onClose?: () => void): Doc
   // --- Blur ---
   const blurSigma = numeric(2, { width: 200 });
   const blurTab = h('div', { class: 'tab-content' }, [
-    row('Amount (σ):', blurSigma),
+    rowHint('Amount (σ):', 'Gaussian blur strength. Larger values blur the image more.', blurSigma),
     h('div', { class: 'button-row' }, [
       button('Blur', () => apply('Blurring image', () => blurImage(store.activeImage!, num(blurSigma)))),
     ]),

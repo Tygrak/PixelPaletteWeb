@@ -1,0 +1,16 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 32 32" width="32" height="32" role="img" aria-label="PixelPalette">
+  <title>PixelPalette</title>
+  <rect width="32" height="32" rx="6" fill="#1d2027"/>
+  <rect x="1" y="1" width="30" height="30" rx="5" fill="none" stroke="#3a3f47" stroke-width="1"/>
+  <g shape-rendering="crispEdges">
+    <rect x="5" y="5" width="6" height="6" fill="#22d3ee"/>
+    <rect x="13" y="5" width="6" height="6" fill="#e879f9"/>
+    <rect x="21" y="5" width="6" height="6" fill="#facc15"/>
+    <rect x="5" y="13" width="6" height="6" fill="#4ade80"/>
+    <rect x="13" y="13" width="6" height="6" fill="#f8fafc"/>
+    <rect x="21" y="13" width="6" height="6" fill="#fb7185"/>
+    <rect x="5" y="21" width="6" height="6" fill="#60a5fa"/>
+    <rect x="13" y="21" width="6" height="6" fill="#fb923c"/>
+    <rect x="21" y="21" width="6" height="6" fill="#a78bfa"/>
+  </g>
+</svg>

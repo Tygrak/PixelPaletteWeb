@@ -24,7 +24,7 @@ export function createMiniLayers(store: Store, isFullPanelOpen: () => boolean): 
 
   const addButton = h('button', {
     class: 'mini-layers-btn',
-    title: 'Add layer',
+    title: 'Add layer (Ctrl+N)',
     onclick: () => store.addLayer(),
   });
   addButton.innerHTML = PLUS_ICON;

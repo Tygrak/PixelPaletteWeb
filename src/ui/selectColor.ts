@@ -22,9 +22,16 @@ export function selectColorDialog(initial?: RGB): Promise<RGB> {
     const hInput = numeric(0, { min: 0, max: 360 });
     const sInput = numeric(0, { min: 0, max: 1, step: 0.01 });
     const lInput = numeric(0, { min: 0, max: 1, step: 0.01 });
+    rInput.title = 'Red channel, from 0 to 255.';
+    gInput.title = 'Green channel, from 0 to 255.';
+    bInput.title = 'Blue channel, from 0 to 255.';
+    hInput.title = 'Hue in degrees, from 0 to 360.';
+    sInput.title = 'Saturation, from 0 (grey) to 1 (fully saturated).';
+    lInput.title = 'Lightness, from 0 (black) to 1 (white).';
     const hexInput = document.createElement('input');
     hexInput.type = 'text';
     hexInput.value = '#000000';
+    hexInput.title = 'Hexadecimal color code, for example #ff8800.';
     const preview = document.createElement('div');
     preview.className = 'color-preview';
 
