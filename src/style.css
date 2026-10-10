@@ -73,16 +73,167 @@ body {
 
 .sidebar {
   width: 100px;
+  flex: 0 0 100px;
   display: flex;
   flex-direction: column;
   gap: 2px;
   padding: 2px;
   background: var(--bg-panel);
   border-right: 2px solid #000;
+  overflow: hidden;
 }
 
 .sidebar-btn {
   height: 50px;
+  flex: 0 0 auto;
+}
+
+.sidebar-btn.active {
+  background: #7d8785;
+  outline: 1px solid #000;
+}
+
+.sidebar-spacer {
+  flex: 1 1 auto;
+  min-height: 4px;
+}
+
+/* --- Mini layers (sidebar footer, shown while the Layers panel is closed) --- */
+.mini-layers {
+  flex: 0 1 auto;
+  min-height: 0;
+  display: flex;
+  flex-direction: column;
+  gap: 2px;
+  padding: 3px;
+  background: var(--bg-dark);
+  border: 1px solid #000;
+  border-radius: 3px;
+}
+
+.mini-layers.hidden {
+  display: none;
+}
+
+.mini-layers-head {
+  display: flex;
+  align-items: center;
+  gap: 2px;
+}
+
+.mini-layers-title {
+  flex: 1 1 auto;
+  min-width: 0;
+  font-weight: 600;
+  font-size: 11px;
+  white-space: nowrap;
+  overflow: hidden;
+}
+
+.mini-layers-btn {
+  flex: 0 0 auto;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  width: 20px;
+  height: 20px;
+  padding: 0;
+  background: var(--bg-control-hover);
+  color: var(--text);
+  border: none;
+  border-radius: 3px;
+  cursor: pointer;
+}
+
+.mini-layers-btn:hover:not(:disabled) {
+  background: #565d5b;
+}
+
+.mini-layers-btn:disabled {
+  opacity: 0.5;
+  cursor: default;
+}
+
+.mini-layers-btn svg {
+  width: 14px;
+  height: 14px;
+  display: block;
+}
+
+.mini-layer-list {
+  min-height: 0;
+  overflow-y: auto;
+  display: flex;
+  flex-direction: column;
+  gap: 1px;
+}
+
+.mini-layer-item {
+  display: flex;
+  align-items: center;
+  padding: 2px 4px;
+  border-radius: 2px;
+  cursor: pointer;
+  font-size: 11px;
+  user-select: none;
+}
+
+.mini-layer-item:hover {
+  background: var(--bg-item-hover);
+}
+
+.mini-layer-item.active {
+  background: var(--bg-control-hover);
+  outline: 1px solid #000;
+}
+
+.mini-layer-name {
+  min-width: 0;
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+
+.mini-layer-item.dragging {
+  opacity: 0.5;
+}
+
+.mini-layer-item.drop-above {
+  box-shadow: inset 0 2px 0 #fff;
+}
+
+.mini-layer-item.drop-below {
+  box-shadow: inset 0 -2px 0 #fff;
+}
+
+.layer-eye {
+  flex: 0 0 auto;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  width: 18px;
+  height: 18px;
+  padding: 0;
+  margin-right: 4px;
+  background: transparent;
+  color: var(--text);
+  border: none;
+  border-radius: 3px;
+  cursor: pointer;
+}
+
+.layer-eye:hover {
+  background: var(--bg-control-hover);
+}
+
+.layer-eye.off {
+  opacity: 0.45;
+}
+
+.layer-eye svg {
+  width: 14px;
+  height: 14px;
+  display: block;
 }
 
 .canvas-area {

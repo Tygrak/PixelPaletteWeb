@@ -63,20 +63,20 @@ export function openPalettePanel(ctx: AppContext, onClose?: () => void): DockPan
     row('Result color amount:', medianCutAmount),
     h('div', { class: 'button-row' }, [
       button('Preview Median Cut', async () => {
-        if (!store.current) {
+        if (!store.activeImage) {
           return;
         }
         const amount = Math.trunc(num(medianCutAmount));
-        const image = store.current;
+        const image = store.activeImage;
         const result = await ctx.runTask('Sorting image', () => sortColors(image, amount));
         ctx.applyImage(result);
       }),
       button('Generate Median Cut Palette', async () => {
-        if (!store.current) {
+        if (!store.activeImage) {
           return;
         }
         const amount = Math.trunc(num(medianCutAmount));
-        const image = store.current;
+        const image = store.activeImage;
         store.palette = await ctx.runTask('Generating palette', () => medianCut(image, amount));
         selectedIndex = -1;
         renderList();
@@ -92,12 +92,12 @@ export function openPalettePanel(ctx: AppContext, onClose?: () => void): DockPan
     row('Max steps:', kMeansSteps),
     h('div', { class: 'button-row' }, [
       button('Generate K-Means Clustering Palette', async () => {
-        if (!store.current) {
+        if (!store.activeImage) {
           return;
         }
         const amount = Math.trunc(num(kMeansAmount));
         const steps = Math.trunc(num(kMeansSteps));
-        const image = store.current;
+        const image = store.activeImage;
         store.palette = await ctx.runTask('Generating palette', () => kMeans(image, amount, steps));
         selectedIndex = -1;
         renderList();
@@ -111,11 +111,11 @@ export function openPalettePanel(ctx: AppContext, onClose?: () => void): DockPan
     row('Result color amount:', hmlAmount),
     h('div', { class: 'button-row' }, [
       button('Generate Sectors High Mid Low Palette', async () => {
-        if (!store.current) {
+        if (!store.activeImage) {
           return;
         }
         const amount = Math.trunc(num(hmlAmount));
-        const image = store.current;
+        const image = store.activeImage;
         store.palette = await ctx.runTask('Generating palette', () => sectorsHighMidLow(image, amount));
         selectedIndex = -1;
         renderList();

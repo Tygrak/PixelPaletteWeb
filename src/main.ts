@@ -39,6 +39,7 @@ import { openAdjustmentsPanel } from './ui/adjustmentsPanel';
 import { openDitherPanel } from './ui/ditherPanel';
 import { openEffectsPanel } from './ui/effectsPanel';
 import { openLayersPanel } from './ui/layersPanel';
+import { createMiniLayers, MiniLayers } from './ui/miniLayers';
 import { openPalettePanel } from './ui/palettePanel';
 import { openSaveDialog } from './ui/saveDialog';
 import { getActiveColorPicker, selectColorDialog } from './ui/selectColor';
@@ -48,6 +49,7 @@ import { createTimeline, Timeline } from './ui/timeline';
 const store = new Store();
 
 let timeline: Timeline | null = null;
+let miniLayers: MiniLayers | null = null;
 
 async function copyText(text: string): Promise<void> {
   try {
@@ -349,6 +351,13 @@ let effectsPanel: DockPanel | null = null;
 let layersPanel: DockPanel | null = null;
 let settingsPanel: DockPanel | null = null;
 
+// Refreshes a panel's toggle button and the layout after opening/closing.
+function panelChanged(): void {
+  applyCanvasLayout();
+  miniLayers?.sync();
+  syncPanelButtons();
+}
+
 const togglePanels: Record<string, () => void> = {
   palette: () => {
     if (palettePanel) {
@@ -357,9 +366,9 @@ const togglePanels: Record<string, () => void> = {
     }
     palettePanel = openPalettePanel(ctx, () => {
       palettePanel = null;
-      applyCanvasLayout();
+      panelChanged();
     });
-    applyCanvasLayout();
+    panelChanged();
   },
   dither: () => {
     if (ditherPanel) {
@@ -368,9 +377,9 @@ const togglePanels: Record<string, () => void> = {
     }
     ditherPanel = openDitherPanel(ctx, () => {
       ditherPanel = null;
-      applyCanvasLayout();
+      panelChanged();
     });
-    applyCanvasLayout();
+    panelChanged();
   },
   adjustments: () => {
     if (adjustmentsPanel) {
@@ -379,9 +388,9 @@ const togglePanels: Record<string, () => void> = {
     }
     adjustmentsPanel = openAdjustmentsPanel(ctx, () => {
       adjustmentsPanel = null;
-      applyCanvasLayout();
+      panelChanged();
     });
-    applyCanvasLayout();
+    panelChanged();
   },
   effects: () => {
     if (effectsPanel) {
@@ -390,9 +399,9 @@ const togglePanels: Record<string, () => void> = {
     }
     effectsPanel = openEffectsPanel(ctx, () => {
       effectsPanel = null;
-      applyCanvasLayout();
+      panelChanged();
     });
-    applyCanvasLayout();
+    panelChanged();
   },
   layers: () => {
     if (layersPanel) {
@@ -401,9 +410,9 @@ const togglePanels: Record<string, () => void> = {
     }
     layersPanel = openLayersPanel(ctx, () => {
       layersPanel = null;
-      applyCanvasLayout();
+      panelChanged();
     });
-    applyCanvasLayout();
+    panelChanged();
   },
   settings: () => {
     if (settingsPanel) {
@@ -412,9 +421,9 @@ const togglePanels: Record<string, () => void> = {
     }
     settingsPanel = openSettingsPanel(ctx, () => {
       settingsPanel = null;
-      applyCanvasLayout();
+      panelChanged();
     });
-    applyCanvasLayout();
+    panelChanged();
   },
 };
 
@@ -534,6 +543,16 @@ const redoButton = h('button', {
     }
   },
 });
+const restoreButton = h('button', {
+  class: 'btn toolbar-btn',
+  text: 'Restore',
+  onclick: () => {
+    if (!store.working) {
+      commitFloating();
+      store.restore();
+    }
+  },
+});
 
 const toolbar = h('div', { class: 'toolbar' }, [
   newButton,
@@ -541,6 +560,7 @@ const toolbar = h('div', { class: 'toolbar' }, [
   saveButton,
   undoButton,
   redoButton,
+  restoreButton,
   h('div', { class: 'spacer' }),
   imageSizeText,
   statusText,
@@ -573,16 +593,6 @@ for (const tool of TOOLS) {
 
 // --- Sidebar (docked panels) ---
 
-const restoreButton = h('button', {
-  class: 'btn',
-  text: 'Restore',
-  onclick: () => {
-    if (!store.working) {
-      commitFloating();
-      store.restore();
-    }
-  },
-});
 const ditherButton = h('button', { class: 'btn sidebar-btn', text: 'Dither', onclick: () => togglePanels.dither() });
 const paletteButton = h('button', { class: 'btn sidebar-btn', text: 'Palette', onclick: () => togglePanels.palette() });
 const adjustmentsButton = h('button', {
@@ -598,14 +608,27 @@ const settingsButton = h('button', {
   onclick: () => togglePanels.settings(),
 });
 
+// Highlights a sidebar button while its panel is open (like the active tool).
+function syncPanelButtons(): void {
+  paletteButton.classList.toggle('active', palettePanel !== null);
+  ditherButton.classList.toggle('active', ditherPanel !== null);
+  adjustmentsButton.classList.toggle('active', adjustmentsPanel !== null);
+  effectsButton.classList.toggle('active', effectsPanel !== null);
+  layersButton.classList.toggle('active', layersPanel !== null);
+  settingsButton.classList.toggle('active', settingsPanel !== null);
+}
+
+miniLayers = createMiniLayers(store, () => layersPanel !== null);
+
 const sidebar = h('div', { class: 'sidebar' }, [
-  restoreButton,
   ditherButton,
   paletteButton,
   adjustmentsButton,
   effectsButton,
   layersButton,
   settingsButton,
+  h('div', { class: 'sidebar-spacer' }),
+  miniLayers.root,
 ]);
 
 // --- Options bar ---
@@ -2027,7 +2050,7 @@ window.addEventListener('keydown', (event) => {
     }
     return;
   }
-  if (ctrl && event.shiftKey && event.key.toLowerCase() === 'n') {
+  if (ctrl && event.key.toLowerCase() === 'n') {
     event.preventDefault();
     commitFloating();
     store.addLayer();
@@ -2057,7 +2080,7 @@ window.addEventListener('keydown', (event) => {
     if (floating) {
       commitFloating();
     }
-    store.clearSelection();
+    store.duplicateLayer();
     return;
   }
   if (typing || ctrl) {
@@ -2305,6 +2328,8 @@ function render(): void {
   saveButton.disabled = store.working || store.current === null;
   statusText.textContent = store.status;
 
+  syncPanelButtons();
+  miniLayers?.sync();
   timeline?.sync();
 }
 

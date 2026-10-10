@@ -1,302 +1,88 @@
 # PixelPalette (Web)
 
-A local-only, client-side TypeScript port of **PixelPalette** — a dithering and
-color-manipulation tool — plus an editing toolset (brushes, selections, layers).
+A local-only, client-side pixel-art editor with a dithering and color toolkit.
+Everything runs in the browser: there is no server and nothing is uploaded.
+Open an image (or start a blank one), paint, select, use layers, animate, and
+save.
 
 ## Getting started
 
+Try online [here](https://tygrak.github.io/PixelPaletteWeb/)
+
 ```bash
 npm install
-npm run dev      # development server (HMR)
+npm run dev      # dev server with hot reload
 npm run build    # typecheck + static production build into dist/
 npm run preview  # serve the production build
 ```
 
-## Tool Shortcuts
+Open the printed local URL, then use **New File** for a blank canvas or
+**Open File** to load an image (you can also paste one with `Ctrl + V`).
 
-| Tool                     | Key |
-| ------------------------ | --- |
-| Move Tool                | `V` |
-| Hand (Pan) Tool          | `H` |
-| Zoom Tool                | `Z` |
-| Brush Tool               | `B` |
-| Eraser Tool              | `E` |
-| Clone Stamp Tool         | `S` |
-| Spot Healing Brush       | `J` |
-| Palette Knife            | `K` |
-| Paint Bucket Tool        | `G` |
-| Lasso Tool               | `L` |
-| Quick Selection / Wand   | `W` |
-| Marquee Selection        | `M` |
-| Eyedropper               | `I` |
-| Text Tool                | `T` |
-| Resize Image             | `R` |
+## Features at a glance
 
-## Editing & Navigation
+- **Painting:** brush, eraser, clone stamp, spot healing, palette knife, paint
+  bucket, and text.
+- **Selections:** marquee, lasso, magic wand, plus a floating transform for
+  moving/scaling/rotating the selected pixels.
+- **Layers:** add, duplicate, reorder, merge, delete, per-layer visibility, live
+  compositing, and a compact layer list in the sidebar.
+- **Animation:** a frame timeline with playback, onion skinning, and export as a
+  sprite sheet or separate images.
+- **Palette & dithering:** median-cut, K-means, sectors (HML) and duo-tone
+  palettes; threshold, random, ordered (Bayer), Floyd–Steinberg and
+  min-average-error dithering.
+- **Adjustments:** resize, rotate, flip, HSL shift, blur.
+- **Effects:** Sobel edge detection with hysteresis and auto thresholds.
+- Clipboard copy/paste, undo/redo, customizable save name/format, and a
+  checkerboard / black / white image backdrop.
 
-| Action | Shortcut |
-| ------ | -------- |
-| Undo   | `Ctrl + Z` |
-| Redo   | `Ctrl + Shift + Z` (also `Ctrl + Y`) |
-| Save (opens the save dialog) | `Ctrl + S` |
-| Deselect selection | `Ctrl + D` |
-| Delete selection (to transparency) | `Delete` / `Backspace` |
-| Copy selection to clipboard | `Ctrl + C` |
-| Paste image as new layer     | `Ctrl + V` |
-| Play / pause animation (Animation mode) | `Space` |
+## Tool shortcuts
 
-## Working with Layers
+| Tool                    | Key |
+| ----------------------- | --- |
+| Move                    | `V` |
+| Hand (Pan)              | `H` |
+| Zoom                    | `Z` |
+| Brush                   | `B` |
+| Eraser                  | `E` |
+| Clone Stamp             | `S` |
+| Spot Healing Brush      | `J` |
+| Palette Knife           | `K` |
+| Paint Bucket            | `G` |
+| Lasso                   | `L` |
+| Quick Selection / Wand  | `W` |
+| Marquee Selection       | `M` |
+| Eyedropper              | `I` |
+| Text                    | `T` |
+| Resize Image            | `R` |
 
-| Action        | Shortcut          |
-| ------------- | ----------------- |
-| New Layer     | `Shift + Ctrl + N` |
-| Merge Down    | `Ctrl + E`         |
+Change the brush size with `[` and `]`.
 
-## Tablet / Pen support
+## Editing shortcuts
 
-Drawing-tablet input is supported through the Pointer Events API:
+| Action                                   | Shortcut |
+| ---------------------------------------- | -------- |
+| Undo                                     | `Ctrl + Z` |
+| Redo                                     | `Ctrl + Shift + Z` (also `Ctrl + Y`) |
+| Save (opens the save dialog)             | `Ctrl + S` |
+| Copy selection to clipboard              | `Ctrl + C` |
+| Paste image as a new layer               | `Ctrl + V` |
+| Deselect                                 | `Esc` |
+| Delete selection (to transparency)       | `Delete` / `Backspace` |
+| Play / pause animation (Animation mode)  | `Space` |
 
-- `PointerEvent.pressure` (0–1) modulates brush/eraser **size** and **opacity**
-  while a `pen` or `touch` pointer is active.
-- Mouse/other pointers use full pressure.
-- Pen and touch input are handled the same as the mouse for all tools.
+## Layer shortcuts
 
----
+| Action          | Shortcut            |
+| --------------- | ------------------- |
+| New Layer       | `Ctrl + N`          |
+| Duplicate Layer | `Ctrl + D`          |
+| Merge Down      | `Ctrl + E`          |
 
-## Current Features
+## Tablet / pen support
 
-### Document & file
-
-- Open local images (`png`, `jpg`, `jpeg`, `bmp`, `gif`, `webp`).
-- **New File** creates a blank pure-white `1024 x 1024` document with 8 base
-  colors in the palette (black, white, red, green, blue, yellow, cyan, magenta).
-- Loading or pasting the **first** image automatically fills the palette with
-  the image's 8 dominant colors (median cut), so you can start painting/dithering
-  right away.
-- Copying the current selection to the clipboard as a PNG with `Ctrl + C`
-  (works with a marquee/lasso/wand selection or an in-progress floating
-  transform).
-- Pasting an image from the clipboard with `Ctrl + V` adds it as a **new layer**
-  (centered on the document); if no document is open it opens one.
-- **Save File** opens a save dialog where you can set the file name and choose
-  what to export: the **current frame**, a **sprite sheet (grid)**, or
-  **separate images**. The chosen options (and file name) are remembered.
-- Restore the document back to the originally opened image.
-- Undo / redo history (up to 15 steps), via buttons and keyboard shortcuts.
-
-### Viewing & navigation
-
-- Zoom in/out with `Ctrl + mouse wheel` (anchored at the cursor).
-- `Shift + wheel` pans horizontally; plain wheel pans vertically.
-- Pan by dragging with the **Hand** tool, the middle mouse button, or by
-  holding `Space` while dragging.
-- **Zoom** tool: click to zoom in, `Alt`+click to zoom out.
-- Fit-to-view and 100% presets in the tool options bar.
-- Live zoom-percentage readout.
-- Click (with the Hand tool, without dragging) copies the pixel's hex color to
-  the clipboard.
-
-### Tools
-
-Each tool has an icon in the tool strip and a shortcut.
-
-- **Move** – if a selection exists (from the marquee, lasso or wand tools) the
-  Move tool acts on the **selected pixels**: a transform box appears around the
-  selection and you can drag inside it to move, drag the edge/corner handles to
-  scale, and drag just outside a corner to rotate. The cursor changes to match
-  the handle under it.
-  - Scaling anchors the **opposite edge/corner** by default, so dragging the
-    right side grows the selection to the right (non-proportional). Hold
-    `Shift` to scale about the center instead.
-  - Hold `Alt` while starting the drag to **copy** the selection (the original
-    stays in place; no new layer is created).
-  - With no selection it moves the whole active layer.
-  - `Enter` commits the transform, `Escape` cancels it.
-- **Hand** – pan the view.
-- **Zoom** – click to zoom in / `Alt`+click to zoom out.
-- **Brush** – paint the foreground color with a round tip; **Soft** enables a
-  feathered edge whose opacity falls off toward the rim; **Pencil** gives hard,
-  non-antialiased pixel edges and the cursor shows the exact pixels that will be
-  painted; size and opacity are pressure-sensitive; stroke interpolation avoids
-  gaps.
-- **Eraser** – erase to transparency (with the same pressure behaviour).
-- **Clone Stamp** (`S`) – `Alt`+click to set the source point, then paint to
-  copy pixels from there (aligned: the source follows your stroke at the
-  established offset). Useful for removing objects or duplicating areas.
-- **Spot Healing Brush** (`J`) – paint over a spot; it averages the surrounding
-  pixels and feathers that in, blending away small imperfections.
-- **Palette Knife** (`K`) – scrape and drag existing paint. Each stamp samples
-  the pixels just behind the cursor (relative to the drag direction) and smears
-  them forward, carrying color and transparency along so hues blend and streak
-  realistically. **Strength** sets how much paint each pass lays back down,
-  **Smear** how far behind the blade samples (a larger value drags the paint
-  further along the stroke), and **Soft** feathers the edge.
-- **Paint Bucket** – flood fill from the clicked pixel with the current color
-  (adjustable tolerance, constrained by the active selection).
-- **Lasso** – free-form polygonal selection.
-- **Wand** – contiguous magic-wand selection with an adjustable tolerance.
-- **Marquee** – rectangular selection. A plain click (no drag) clears the
-  selection.
-- **Eyedropper** – sample a color from the image into the brush foreground.
-- **Text** – click on the canvas and type directly; the text appears in place
-  at the chosen size/font/color. Backspace deletes, `Enter` locks it in, `Esc`
-  cancels. Options: size, font (Sans/Serif/Mono/Cursive/Fantasy), bold, italic
-  and color.
-- **Resize Image** – a transform box around the canvas; drag its edges/corners
-  to grow or shrink the document. By default this adds/removes empty canvas
-  filled with the neighboring (edge) color; tick **Scale** to stretch the image
-  content to the new size instead. Width/height and an optional locked ratio are
-  also editable in the options bar.
-
-Brush size can also be changed with `[` and `]`. Selections constrain the
-brush and eraser to the selected region. `Esc` clears the selection.
-
-The selection is outlined with a black/white checkerboard border so it is
-visible on any image. For the **Marquee**, **Lasso** and **Wand** tools, hold
-`Shift` to add to the current selection or `Alt` to subtract from it (no
-modifier replaces it). `Esc` or `Ctrl + D` clears the selection.
-
-When the **Brush** or **Paint Bucket** tool is active, the options bar shows the
-current palette as a row of swatches; click a swatch to make it the active
-color (the active swatch is highlighted). `Alt`+click with either tool acts as
-an eyedropper to sample a color from the image. While sampling (the eyedropper
-tool, or holding `Alt` with the brush/bucket), a swatch showing the color under
-the cursor follows the pointer.
-
-### Animation
-
-Enable **Animation mode** in the Settings panel to show a timeline along the
-bottom of the window.
-
-- Each **frame** is a full document with its own layers (edit one frame at a
-  time; switching frames swaps the whole layer stack, and each frame keeps its
-  own undo history).
-- **+ Frame** adds a frame after the current one; it **duplicates the current
-  frame** by default (untick "Duplicate current" to add a blank frame).
-- **Delete** removes the current frame; drag thumbnails to **reorder** them.
-- **Play / Stop** (or press `Space`) plays the animation at the chosen **FPS**
-  (`1`–`60`). Editing is paused while the animation plays; `Esc` stops it.
-- **Onion skin** overlays the previous frame at a configurable **Opacity** on
-  the current frame, so you can line up motion. It is hidden during playback and
-  on the first frame.
-- The toolbar **Save File** button exports either the **current frame**, a
-  **sprite sheet (grid)** with a configurable column count, or **separate
-  images** (`name_001.png`, `name_002.png`, …). The file name and last used
-  options are remembered.
-
-### Layers
-
-- Docked **Layers** panel: list of layers with per-layer visibility toggles and
-  an active-layer highlight.
-- Double-click a layer to rename it; drag a layer to reorder the stack.
-- New Layer (`Shift + Ctrl + N`), Duplicate Layer, Merge Down (`Ctrl + E`,
-  merges the active layer into the one below), Delete Layer.
-- Layers are alpha-composited (source-over) for display, saving, and all
-  processing operations.
-
-### Palette panel
-
-- Palette Colors: list of swatches; add / remove / clear; double-click a
-  swatch to edit it.
-- **Median Cut** palette generation (and a "Preview Median Cut" sort preview).
-- **K-Means** clustering palette (configurable color count and max steps).
-- **Sectors High / Mid / Low** palette generation.
-- **Duo Tone** palette generation (hue/saturation, plus "add to palette").
-- **Import / Export** palettes as hex text with a configurable separator.
-
-### Dither panel
-
-- **Threshold** – snap every pixel to the nearest palette color.
-- **Random** – random dithering with a configurable bias.
-- **Ordered** – ordered (Bayer) dithering with an editable 4×4 matrix.
-- **2 Row** – Floyd–Steinberg error diffusion with an editable matrix.
-- **3 Row** – Min-Average-Error error diffusion with an editable matrix.
-
-### Adjustments panel
-
-- **Transform**: resize (with optional locked aspect ratio), rotate 90°
-  clockwise / counter-clockwise, flip horizontally / vertically.
-- **HSL shift**: hue shift, saturation and lightness change.
-- **Blur**: Gaussian-style separable blur with a configurable sigma.
-- **Compare**: average color-distance and average brightness error against the
-  original image or another image loaded from a file.
-
-### Effects panel
-
-- **Edge Detection**: Sobel gradient magnitude + hysteresis thresholding +
-  dilation.
-  - Edge width (thickness in pixels).
-  - Edge color (color picker).
-  - Thresholds, with an **Auto thresholds** mode that estimates the low/high
-    thresholds from the image (mean + standard deviation of the gradient
-    magnitude) so smooth gradients are ignored and the image is not
-    over-detected. Turning Auto off exposes manual low/high thresholds.
-  - Background: Black, White, or the Original image (edges overlaid on the
-    source). Defaults to Original image.
-
-### Color picker
-
-- Non-modal floating panel (the rest of the UI stays visible and interactive).
-- RGB (0–255), HSL, and hex inputs kept in sync, with a live preview.
-- While open, clicking the image picks (eyedroppers) that pixel's color.
-
-### Docked workspace panels
-
-- Dither, Palette, Adjustments, Effects, Layers and Settings open as docked
-  panels beside the sidebar (not modal windows) and can be open at the same
-  time.
-- Panels stack vertically; their combined column is resizable by dragging its
-  right edge.
-- The image remains fully interactive while panels are open.
-
-### Settings panel
-
-- Default canvas width/height used by **New File**.
-- Default background color for a new canvas.
-- **Blank (transparent) new image**: when ticked, **New File** starts with a
-  fully transparent layer instead of the background color.
-- **Image backdrop**: what is shown behind the image (visible through
-  transparent pixels) — a **checkerboard**, **pure black**, or **pure white**.
-- Animation mode toggle (shows the frame timeline at the bottom).
-- All settings are saved in the browser's `localStorage`, so they persist
-  between sessions.
-
----
-
-## Architecture
-
-```
-src/
-  main.ts            App shell, toolbar, tool routing, shortcuts, canvas render
-  store.ts           Central state: layers, history, tools, selection, palette
-  layers.ts          Layer model + alpha compositing
-  tools.ts           Tool definitions, shortcuts, brush/eraser painting
-  selection.ts       Marquee / lasso / wand masks + selection overlay
-  floating.ts        Floating selection: lift, transform box, bake
-  color.ts           Color helpers, HSL, hex, RGB<->XYZ<->Lab (System.Drawing semantics)
-  image.ts           ImageData helpers, error metrics, resize/rotate/flip
-  palette.ts         Median Cut, K-Means, HML, Duo Tone, sort
-  dither.ts          Threshold, Floyd-Steinberg, MinAvgErr, Ordered, Random
-  adjust.ts          HSL shift, blur
-  effects.ts         Edge detection (Sobel + hysteresis + dilation)
-  files.ts           Local file open/save + clipboard blob decode
-  dom.ts             Small DOM helpers, dialog + docked-panel builders
-  context.ts         AppContext shared with panels
-  ui/
-    palettePanel.ts
-    ditherPanel.ts
-    adjustmentsPanel.ts
-    effectsPanel.ts
-    layersPanel.ts
-    selectColor.ts
-```
-
-## Notes & limitations
-
-- Processing panels (Dither / Palette / Adjustments / Effects) operate on the
-  **composited** document and write the result into the **active layer**.
-- Resizing one layer moves/resizes all layers together (the document is
-  resized as a whole).
-- `Ctrl + Shift + N` cannot be intercepted in a few browsers (e.g. Chrome uses
-  it to open an Incognito window); use the Layers panel button there.
-- Undo history is capped at 15 steps.
+Drawing-tablet input uses the Pointer Events API: `PointerEvent.pressure`
+(0–1) modulates brush/eraser size and opacity for `pen`/`touch` pointers, while
+the mouse uses full pressure. Pen and touch behave like the mouse for all other
+tools.

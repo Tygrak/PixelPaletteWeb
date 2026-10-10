@@ -1,5 +1,6 @@
 import { AppContext } from '../context';
 import { button, createDockPanel, DockPanel, h } from '../dom';
+import { EYE_ICON, EYE_OFF_ICON } from '../icons';
 
 export function openLayersPanel(ctx: AppContext, onClose?: () => void): DockPanel {
   const { store } = ctx;
@@ -158,16 +159,20 @@ export function openLayersPanel(ctx: AppContext, onClose?: () => void): DockPane
       rowElements = [];
       for (let i = store.layers.length - 1; i >= 0; i--) {
         const layer = store.layers[i];
-        const visibility = document.createElement('input');
-        visibility.type = 'checkbox';
-        visibility.checked = layer.visible;
-        visibility.title = 'Toggle visibility';
-        visibility.addEventListener('click', (event) => event.stopPropagation());
-        visibility.addEventListener('change', () => store.setLayerVisible(i, visibility.checked));
+        const eye = h('button', {
+          class: `layer-eye${layer.visible ? '' : ' off'}`,
+          title: layer.visible ? 'Hide layer' : 'Show layer',
+        });
+        eye.innerHTML = layer.visible ? EYE_ICON : EYE_OFF_ICON;
+        eye.addEventListener('pointerdown', (event) => event.stopPropagation());
+        eye.addEventListener('click', (event) => {
+          event.stopPropagation();
+          store.setLayerVisible(i, !layer.visible);
+        });
 
         const nameEl = h('span', { class: 'layer-name', text: layer.name, title: 'Double-click to rename' });
 
-        const row = h('div', { class: 'layer-item' }, [visibility, nameEl]);
+        const row = h('div', { class: 'layer-item' }, [eye, nameEl]);
         row.dataset.id = String(layer.id);
         nameEl.addEventListener('dblclick', (event) => {
           event.stopPropagation();
@@ -217,7 +222,7 @@ export function openLayersPanel(ctx: AppContext, onClose?: () => void): DockPane
       ]),
       h('div', {
         class: 'dialog-hint',
-        text: 'Double-click a layer to rename · drag to reorder · Shift+Ctrl+N new · Ctrl+E merge down',
+        text: 'Double-click a layer to rename · drag to reorder · Ctrl+N new · Ctrl+D duplicate · Ctrl+E merge down',
       }),
     ]),
   );

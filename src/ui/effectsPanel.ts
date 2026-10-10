@@ -65,10 +65,10 @@ export function openEffectsPanel(ctx: AppContext, onClose?: () => void): DockPan
     row('Background:', backgroundSelect),
     h('div', { class: 'button-row' }, [
       button('Detect Edges', async () => {
-        if (!store.current) {
+        if (!store.activeImage) {
           return;
         }
-        const image = store.current;
+        const image = store.activeImage;
         const auto = autoCheckbox.checked;
         const options = {
           width: num(widthInput),

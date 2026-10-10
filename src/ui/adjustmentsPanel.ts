@@ -12,7 +12,7 @@ export function openAdjustmentsPanel(ctx: AppContext, onClose?: () => void): Doc
   });
 
   const apply = async (status: string, task: () => ImageData): Promise<void> => {
-    if (!store.current) {
+    if (!store.activeImage) {
       return;
     }
     const result = await ctx.runTask(status, task);
@@ -51,22 +51,22 @@ export function openAdjustmentsPanel(ctx: AppContext, onClose?: () => void): Doc
       button('Resize', async () => {
         const width = Math.max(1, Math.trunc(num(widthInput)));
         const height = Math.max(1, Math.trunc(num(heightInput)));
-        await apply('Resizing image', () => resizeImage(store.current!, width, height));
+        await apply('Resizing image', () => resizeImage(store.activeImage!, width, height));
       }),
     ]),
     h('div', { class: 'divider' }),
     h('div', { class: 'row' }, [
       h('span', { class: 'row-label', text: 'Rotate:' }),
       h('div', { class: 'row-controls' }, [
-        button('90° Clockwise', () => apply('Rotating image', () => rotateImage(store.current!, 90))),
-        button('90° Counterclockwise', () => apply('Rotating image', () => rotateImage(store.current!, 270))),
+        button('90° Clockwise', () => apply('Rotating image', () => rotateImage(store.activeImage!, 90))),
+        button('90° Counterclockwise', () => apply('Rotating image', () => rotateImage(store.activeImage!, 270))),
       ]),
     ]),
     h('div', { class: 'row' }, [
       h('span', { class: 'row-label', text: 'Flip:' }),
       h('div', { class: 'row-controls' }, [
-        button('X Axis', () => apply('Flipping image', () => flipImage(store.current!, 'x'))),
-        button('Y Axis', () => apply('Flipping image', () => flipImage(store.current!, 'y'))),
+        button('X Axis', () => apply('Flipping image', () => flipImage(store.activeImage!, 'x'))),
+        button('Y Axis', () => apply('Flipping image', () => flipImage(store.activeImage!, 'y'))),
       ]),
     ]),
   ]);
@@ -82,7 +82,7 @@ export function openAdjustmentsPanel(ctx: AppContext, onClose?: () => void): Doc
     h('div', { class: 'button-row' }, [
       button('Shift HSL', () =>
         apply('Adjusting image', () =>
-          shiftHsl(store.current!, num(hueInput), num(saturationInput) / 100, num(lightnessInput) / 100),
+          shiftHsl(store.activeImage!, num(hueInput), num(saturationInput) / 100, num(lightnessInput) / 100),
         ),
       ),
     ]),
@@ -93,7 +93,7 @@ export function openAdjustmentsPanel(ctx: AppContext, onClose?: () => void): Doc
   const blurTab = h('div', { class: 'tab-content' }, [
     row('Amount (σ):', blurSigma),
     h('div', { class: 'button-row' }, [
-      button('Blur', () => apply('Blurring image', () => blurImage(store.current!, num(blurSigma)))),
+      button('Blur', () => apply('Blurring image', () => blurImage(store.activeImage!, num(blurSigma)))),
     ]),
   ]);
 
@@ -148,11 +148,11 @@ export function openAdjustmentsPanel(ctx: AppContext, onClose?: () => void): Doc
   // Keep resize fields in sync with the current image while the dialog is open.
   let lastImage: ImageData | null = null;
   const sync = (): void => {
-    if (store.current && store.current !== lastImage) {
-      lastImage = store.current;
+    if (store.activeImage && store.activeImage !== lastImage) {
+      lastImage = store.activeImage;
       if (lockRatio.checked) {
-        widthInput.value = String(store.current.width);
-        heightInput.value = String(store.current.height);
+        widthInput.value = String(store.activeImage.width);
+        heightInput.value = String(store.activeImage.height);
         updateRatio();
       }
     }

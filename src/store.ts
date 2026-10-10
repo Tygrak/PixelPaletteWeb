@@ -125,6 +125,12 @@ export class Store {
     return this.layers[this.activeIndex] ?? null;
   }
 
+  // The active layer's own pixels (processing operations act on this, not the
+  // flattened composite, so they affect only the current layer).
+  get activeImage(): ImageData | null {
+    return this.activeLayer?.image ?? null;
+  }
+
   // The flattened document that is displayed and processed.
   get current(): ImageData | null {
     if (this.layers.length === 0) {
@@ -227,6 +233,13 @@ export class Store {
     }
     this.pushHistory();
     this.layers[this.activeIndex] = { ...layer, image: img };
+    // When the document is a single layer, keep the canvas in sync with it
+    // (e.g. after rotating or resizing the layer).
+    if (this.layers.length === 1 && (img.width !== this.width || img.height !== this.height)) {
+      this.width = img.width;
+      this.height = img.height;
+      this.selection = null;
+    }
     this.notify();
   }
 

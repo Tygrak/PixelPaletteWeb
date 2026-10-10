@@ -28,7 +28,7 @@ export function openDitherPanel(ctx: AppContext, onClose?: () => void): DockPane
   const { store } = ctx;
 
   const apply = async (status: string, task: () => ImageData): Promise<void> => {
-    if (!store.current || store.palette.length === 0) {
+    if (!store.activeImage || store.palette.length === 0) {
       return;
     }
     const result = await ctx.runTask(status, task);
@@ -39,7 +39,7 @@ export function openDitherPanel(ctx: AppContext, onClose?: () => void): DockPane
   const thresholdTab = h('div', { class: 'tab-content' }, [
     h('div', { class: 'button-row' }, [
       button('Threshold', () =>
-        apply('Thresholding image', () => closestColor(store.current!, store.palette.slice())),
+        apply('Thresholding image', () => closestColor(store.activeImage!, store.palette.slice())),
       ),
     ]),
   ]);
@@ -53,7 +53,7 @@ export function openDitherPanel(ctx: AppContext, onClose?: () => void): DockPane
     ]),
     h('div', { class: 'button-row' }, [
       button('Dither', () =>
-        apply('Dithering image', () => randomDither(store.current!, store.palette.slice(), num(randomBias))),
+        apply('Dithering image', () => randomDither(store.activeImage!, store.palette.slice(), num(randomBias))),
       ),
     ]),
   ]);
@@ -86,7 +86,7 @@ export function openDitherPanel(ctx: AppContext, onClose?: () => void): DockPane
           const matrix = orderedInputs.map((rowInputs) =>
             rowInputs.map((input) => Math.trunc(num(input)) / 16),
           );
-          return orderedDither(store.current!, store.palette.slice(), matrix);
+          return orderedDither(store.activeImage!, store.palette.slice(), matrix);
         }),
       ),
     ]),
@@ -120,7 +120,7 @@ export function openDitherPanel(ctx: AppContext, onClose?: () => void): DockPane
         apply('Dithering image', () => {
           const divisor = num(fsMultiplier) || 1;
           const matrix = [fsRight, fsDownLeft, fsDown, fsDownRight].map((input) => num(input) / divisor);
-          return floydSteinbergDither(store.current!, store.palette.slice(), matrix);
+          return floydSteinbergDither(store.activeImage!, store.palette.slice(), matrix);
         }),
       ),
     ]),
@@ -172,7 +172,7 @@ export function openDitherPanel(ctx: AppContext, onClose?: () => void): DockPane
         apply('Dithering image', () => {
           const divisor = num(minAvgMultiplier) || 1;
           const matrix = minAvg.map((input) => num(input) / divisor);
-          return minAvgErrDither(store.current!, store.palette.slice(), matrix);
+          return minAvgErrDither(store.activeImage!, store.palette.slice(), matrix);
         }),
       ),
     ]),

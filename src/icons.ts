@@ -36,3 +36,9 @@ const ICONS: Record<ToolId, string> = {
 export function toolIcon(id: ToolId): string {
   return ICONS[id];
 }
+
+// Layer visibility toggles (shared by the full Layers panel and the mini list).
+export const EYE_ICON = WRAP('<path d="M2 12s3.5-7 10-7 10 7 10 7-3.5 7-10 7-10-7-10-7z"/><circle cx="12" cy="12" r="3"/>');
+export const EYE_OFF_ICON = WRAP(
+  '<path d="M3 3l18 18"/><path d="M10.6 10.6a3 3 0 0 0 4.2 4.2"/><path d="M9.9 5.2A11 11 0 0 1 12 5c6.5 0 10 7 10 7a17 17 0 0 1-3.2 3.9"/><path d="M6.1 6.1A17.7 17.7 0 0 0 2 12s3.5 7 10 7a10.8 10.8 0 0 0 4.1-.8"/>',
+);
