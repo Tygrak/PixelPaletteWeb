@@ -118,6 +118,28 @@ export function createDialog(
   return { overlay, body, status, primary, close };
 }
 
+// Shows a modal confirmation prompt and resolves true when the confirm button
+// is pressed, false when dismissed (Cancel, backdrop, or Escape).
+export function confirmDialog(title: string, message: string, confirmLabel = 'OK'): Promise<boolean> {
+  return new Promise((resolve) => {
+    let confirmed = false;
+    const dialog = createDialog(title, 400, 'Cancel', () => resolve(confirmed));
+    const confirmButton = h('button', {
+      class: 'btn',
+      text: confirmLabel,
+      onclick: () => {
+        confirmed = true;
+        dialog.close();
+      },
+    });
+    dialog.body.append(
+      h('div', { class: 'dialog-hint', text: message }),
+      h('div', { class: 'button-row' }, [confirmButton]),
+    );
+    confirmButton.focus();
+  });
+}
+
 export interface DockPanel {
   root: HTMLElement;
   body: HTMLElement;

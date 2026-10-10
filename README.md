@@ -1,14 +1,12 @@
 # PixelPalette (Web)
 
-A local-only, client-side pixel-art editor with a dithering and color toolkit.
-Everything runs in the browser: there is no server and nothing is uploaded.
-Open an image (or start a blank one), paint, select, use layers, animate, and
-save.
+A client-side image editor originally created for dithering with some simple image editing capabilities added.
 
 ## Getting started
 
 Try online [here](https://tygrak.github.io/PixelPaletteWeb/)
 
+Locally:
 ```bash
 npm install
 npm run dev      # dev server with hot reload
@@ -16,10 +14,7 @@ npm run build    # typecheck + static production build into dist/
 npm run preview  # serve the production build
 ```
 
-Open the printed local URL, then use **New File** for a blank canvas or
-**Open File** to load an image (you can also paste one with `Ctrl + V`).
-
-## Features at a glance
+## Features
 
 - **Painting:** brush, eraser, clone stamp, spot healing, palette knife, paint
   bucket, and text.
@@ -29,7 +24,7 @@ Open the printed local URL, then use **New File** for a blank canvas or
   compositing, and a compact layer list in the sidebar.
 - **Animation:** a frame timeline with playback, onion skinning, and export as a
   sprite sheet or separate images.
-- **Palette & dithering:** median-cut, K-means, sectors (HML) and duo-tone
+- **Palette & dithering:** median-cut, K-means and duo-tone
   palettes; threshold, random, ordered (Bayer), Floyd–Steinberg and
   min-average-error dithering.
 - **Adjustments:** resize, rotate, flip, HSL shift, blur.

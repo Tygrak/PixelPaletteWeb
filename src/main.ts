@@ -1,7 +1,8 @@
 import './style.css';
+import { BRUSHES, brushFootprint, pressureFactor } from './brushes';
 import { clamp, colorToHex, hexToColor, rgb, RGB } from './color';
 import { AppContext } from './context';
-import { DockPanel, h } from './dom';
+import { confirmDialog, DockPanel, h } from './dom';
 import { imageDataFromBlob, loadImageFile, saveImageFile } from './files';
 import {
   bakeFloating,
@@ -34,7 +35,7 @@ import {
 } from './selection';
 import { Store } from './store';
 import { drawText } from './text';
-import { cloneStamp, floodFill, healStamp, knifeStamp, paintStroke, pencilOffsets, stampBrush, ToolId, toolForShortcut, TOOLS } from './tools';
+import { cloneStamp, floodFill, healStamp, knifeStamp, stampBrush, ToolId, toolForShortcut, TOOLS } from './tools';
 import { openAdjustmentsPanel } from './ui/adjustmentsPanel';
 import { openDitherPanel } from './ui/ditherPanel';
 import { openEffectsPanel } from './ui/effectsPanel';
@@ -472,17 +473,8 @@ function newDocument(): void {
   commitFloating();
   const width = Math.max(1, store.settings.canvasWidth);
   const height = Math.max(1, store.settings.canvasHeight);
-  const image = createEmptyImage(width, height);
-  if (!store.settings.blankNewImage) {
-    const background = hexToColor(store.settings.backgroundColor);
-    for (let i = 0; i < width * height; i++) {
-      image.data[i * 4] = background.r;
-      image.data[i * 4 + 1] = background.g;
-      image.data[i * 4 + 2] = background.b;
-      image.data[i * 4 + 3] = 255;
-    }
-  }
-  store.openImage(image);
+  const background = store.settings.blankNewImage ? null : hexToColor(store.settings.backgroundColor);
+  store.newDocument(width, height, background);
   store.palette = BASE_COLORS.map((color) => ({ ...color }));
   store.emit();
 }
@@ -490,7 +482,15 @@ function newDocument(): void {
 const newButton = h('button', {
   class: 'btn toolbar-btn',
   text: 'New File',
-  onclick: () => newDocument(),
+  onclick: async () => {
+    if (store.working) {
+      return;
+    }
+    if (store.current && !(await confirmDialog('New File', 'This will discard the current image. Continue?', 'New File'))) {
+      return;
+    }
+    newDocument();
+  },
 });
 const openButton = h('button', {
   class: 'btn toolbar-btn',
@@ -661,50 +661,47 @@ const pickForegroundButton = h('button', {
     store.setForeground(chosen);
   },
 });
-const softBrushCheckbox = document.createElement('input');
-softBrushCheckbox.type = 'checkbox';
-softBrushCheckbox.checked = store.softBrush;
-softBrushCheckbox.addEventListener('change', () => store.setSoftBrush(softBrushCheckbox.checked));
-const pencilCheckbox = document.createElement('input');
-pencilCheckbox.type = 'checkbox';
-pencilCheckbox.checked = store.pencilBrush;
-pencilCheckbox.addEventListener('change', () => store.setPencilBrush(pencilCheckbox.checked));
+function createBrushSelect(): HTMLSelectElement {
+  const select = h('select', { class: 'select' });
+  for (const brush of BRUSHES) {
+    select.append(h('option', { value: brush.id, text: brush.label }));
+  }
+  select.value = store.brushId;
+  select.addEventListener('change', () => store.setBrush(select.value));
+  return select;
+}
+const brushSelect = createBrushSelect();
 const brushSection = h('div', { class: 'options-section' }, [
+  h('span', { class: 'row-label', text: 'Brush' }),
+  brushSelect,
   h('span', { class: 'row-label', text: 'Size' }),
   brushSizeInput,
   h('span', { class: 'row-label', text: 'Opacity' }),
   brushOpacityInput,
-  h('span', { class: 'row-label', text: 'Soft' }),
-  softBrushCheckbox,
-  h('span', { class: 'row-label', text: 'Pencil' }),
-  pencilCheckbox,
   h('span', { class: 'row-label', text: 'Color' }),
   brushSwatch,
   pickForegroundButton,
 ]);
 
-// Palette knife controls edit the same size/opacity/soft state as the brush,
-// but live in their own inputs so they can be shown independently.
+// Palette knife controls edit the same size/opacity state as the brush, but
+// live in their own inputs so they can be shown independently.
 const knifeSizeInput = numberInput(store.brushSize, 1, 500, 1, () => store.setBrushSize(readNumber(knifeSizeInput)));
 const knifeStrengthInput = numberInput(Math.round(store.brushOpacity * 100), 0, 100, 1, () =>
   store.setBrushOpacity(clamp(readNumber(knifeStrengthInput) / 100, 0, 1)),
 );
-const knifeSoftCheckbox = document.createElement('input');
-knifeSoftCheckbox.type = 'checkbox';
-knifeSoftCheckbox.checked = store.softBrush;
-knifeSoftCheckbox.addEventListener('change', () => store.setSoftBrush(knifeSoftCheckbox.checked));
 const knifeSmearInput = numberInput(Math.round(store.knifeSmear * 100), 0, 100, 1, () =>
   store.setKnifeSmear(clamp(readNumber(knifeSmearInput) / 100, 0, 1)),
 );
+const knifeSelect = createBrushSelect();
 const knifeSection = h('div', { class: 'options-section' }, [
+  h('span', { class: 'row-label', text: 'Brush' }),
+  knifeSelect,
   h('span', { class: 'row-label', text: 'Size' }),
   knifeSizeInput,
   h('span', { class: 'row-label', text: 'Strength' }),
   knifeStrengthInput,
   h('span', { class: 'row-label', text: 'Smear' }),
   knifeSmearInput,
-  h('span', { class: 'row-label', text: 'Soft' }),
-  knifeSoftCheckbox,
 ]);
 
 const wandToleranceInput = numberInput(store.wandTolerance, 0, 255, 1, () =>
@@ -1199,11 +1196,12 @@ function redrawOverlay(): void {
     }
   }
   if (hoverPoint && store.current && isBrushTool(store.activeTool)) {
-    if (store.pencilBrush && store.activeTool !== 'knife') {
-      // Show the exact pixels the pencil will paint.
+    const brush = store.brush;
+    if (!brush.antialias && store.activeTool !== 'knife') {
+      // Show the exact pixels a hard (non-antialiased) tip will paint.
       const cx = Math.floor(hoverPoint.x);
       const cy = Math.floor(hoverPoint.y);
-      for (const { dx, dy } of pencilOffsets(store.brushSize)) {
+      for (const { dx, dy } of brushFootprint(store.brushSize, brush)) {
         const px = cx + dx;
         const py = cy + dy;
         const dark = ((px + py) & 1) === 0;
@@ -1212,16 +1210,23 @@ function redrawOverlay(): void {
       }
     } else {
       const radius = Math.max(0.5, store.brushSize / 2);
-      context.beginPath();
-      context.arc(hoverPoint.x, hoverPoint.y, radius, 0, Math.PI * 2);
+      const hx = hoverPoint.x;
+      const hy = hoverPoint.y;
+      const drawTip = (r: number): void => {
+        context.beginPath();
+        context.ellipse(hx, hy, r, r * brush.roundness, brush.angle, 0, Math.PI * 2);
+        context.stroke();
+      };
       context.lineWidth = 3;
       context.strokeStyle = 'rgba(0, 0, 0, 0.6)';
-      context.stroke();
-      context.beginPath();
-      context.arc(hoverPoint.x, hoverPoint.y, radius, 0, Math.PI * 2);
+      drawTip(radius);
       context.lineWidth = 1;
       context.strokeStyle = 'rgba(255, 255, 255, 0.9)';
-      context.stroke();
+      drawTip(radius);
+      // Inner ring marks where the falloff begins (the solid core).
+      if (brush.hardness > 0 && brush.hardness < 1) {
+        drawTip(radius * brush.hardness);
+      }
     }
   }
 }
@@ -1239,6 +1244,35 @@ let strokeSource: ImageData | null = null;
 let strokeKind: 'brush' | 'eraser' | 'clone' | 'heal' | 'knife' = 'brush';
 let strokeLastX = 0;
 let strokeLastY = 0;
+// Texture is sampled in stroke space, so a stroke tracks its own arc length,
+// a random phase (to vary each stroke) and a per-stamp rotation jitter seed.
+let strokeDistance = 0;
+let strokeSeedX = 0;
+let strokeSeedY = 0;
+let strokeJitterSeed = 0;
+let strokeStampIndex = 0;
+// Per-stroke coverage cap used by textured brushes so grain is not filled in,
+// plus a snapshot of the layer's pixels at stroke start to blend against.
+let strokeMask: Float32Array | null = null;
+let strokeBase: Uint8ClampedArray | null = null;
+
+function beginStrokeState(textured: boolean, image: ImageData): void {
+  strokeDistance = 0;
+  strokeSeedX = Math.random() * 4096;
+  strokeSeedY = Math.random() * 4096;
+  strokeJitterSeed = (Math.random() * 0x7fffffff) | 0;
+  strokeStampIndex = 0;
+  strokeMask = textured ? new Float32Array(image.width * image.height) : null;
+  strokeBase = textured ? new Uint8ClampedArray(image.data) : null;
+}
+
+// Deterministic 0..1 hash used to jitter each stamp's tip rotation.
+function hash01(n: number): number {
+  let h = Math.imul(n ^ (n >>> 15), 2246822519);
+  h = Math.imul(h ^ (h >>> 13), 3266489917);
+  h ^= h >>> 16;
+  return (h >>> 0) / 4294967295;
+}
 
 // Clone Stamp source point / offset (document space).
 let cloneSource: { x: number; y: number } | null = null;
@@ -1411,6 +1445,7 @@ canvas.addEventListener('pointerdown', (event) => {
       strokeImage = image;
       strokeLastX = point.x;
       strokeLastY = point.y;
+      beginStrokeState(store.brush.texture.strength > 0, image);
       paintStrokeSegment(point.x, point.y, point.x, point.y, pointerPressure(event));
       break;
     }
@@ -1438,6 +1473,7 @@ canvas.addEventListener('pointerdown', (event) => {
       strokeImage = image;
       strokeLastX = point.x;
       strokeLastY = point.y;
+      beginStrokeState(false, image);
       paintStrokeSegment(point.x, point.y, point.x, point.y, pointerPressure(event));
       break;
     }
@@ -1456,6 +1492,7 @@ canvas.addEventListener('pointerdown', (event) => {
       strokeImage = image;
       strokeLastX = point.x;
       strokeLastY = point.y;
+      beginStrokeState(false, image);
       paintStrokeSegment(point.x, point.y, point.x, point.y, pointerPressure(event));
       break;
     }
@@ -1469,6 +1506,7 @@ canvas.addEventListener('pointerdown', (event) => {
       strokeImage = image;
       strokeLastX = point.x;
       strokeLastY = point.y;
+      beginStrokeState(false, image);
       paintStrokeSegment(point.x, point.y, point.x, point.y, pointerPressure(event));
       break;
     }
@@ -1761,6 +1799,8 @@ function endPointer(event: PointerEvent): void {
     store.notify();
     strokeImage = null;
     strokeSource = null;
+    strokeMask = null;
+    strokeBase = null;
   }
   if (selecting) {
     if (selecting.type === 'marquee' && !selecting.moved) {
@@ -1838,18 +1878,32 @@ function paintStrokeSegment(
   const layer = store.activeLayer;
   const offsetX = layer ? layer.offsetX : 0;
   const offsetY = layer ? layer.offsetY : 0;
-  const pencil = store.pencilBrush;
-  const radius = pencil
-    ? Math.max(0.5, store.brushSize / 2)
-    : Math.max(0.5, (store.brushSize / 2) * (0.35 + 0.65 * pressure));
-  const alpha = pencil ? store.brushOpacity : clamp(store.brushOpacity * (0.25 + 0.75 * pressure), 0, 1);
+  const brush = store.brush;
+  const sizeFactor = pressureFactor(brush.pressure.sizeMin, brush.pressure.sizeCurve, pressure);
+  const alphaFactor = pressureFactor(brush.pressure.alphaMin, brush.pressure.alphaCurve, pressure);
+  const radius = Math.max(0.5, (store.brushSize / 2) * sizeFactor);
+  // Pixel brushes always stamp fully opaque, on/off pixels (pixel art).
+  const alpha = brush.pixel ? 1 : clamp(store.brushOpacity * alphaFactor, 0, 1);
+
+  let dirX = toX - fromX;
+  let dirY = toY - fromY;
+  const segmentLength = Math.hypot(dirX, dirY);
+  if (segmentLength > 1e-6) {
+    dirX /= segmentLength;
+    dirY /= segmentLength;
+  } else {
+    dirX = 1;
+    dirY = 0;
+  }
 
   if (strokeKind === 'clone' && strokeSource) {
+    const frame = { dirX, dirY, distance: strokeDistance, seedX: strokeSeedX, seedY: strokeSeedY };
     const params = {
       radius,
       alpha,
-      soft: store.softBrush,
-      pencil,
+      brush,
+      angle: brush.angle,
+      frame,
       selection: store.selection,
       layerOffsetX: offsetX,
       layerOffsetY: offsetY,
@@ -1858,33 +1912,27 @@ function paintStrokeSegment(
     };
     forEachStamp(fromX, fromY, toX, toY, radius, (x, y) => cloneStamp(strokeImage!, strokeSource!, x, y, params));
   } else if (strokeKind === 'heal' && strokeSource) {
+    const frame = { dirX, dirY, distance: strokeDistance, seedX: strokeSeedX, seedY: strokeSeedY };
     const params = {
       radius,
       alpha,
-      soft: store.softBrush,
-      pencil,
+      brush,
+      angle: brush.angle,
+      frame,
       selection: store.selection,
       layerOffsetX: offsetX,
       layerOffsetY: offsetY,
     };
     forEachStamp(fromX, fromY, toX, toY, radius, (x, y) => healStamp(strokeImage!, strokeSource!, x, y, params));
   } else if (strokeKind === 'knife') {
-    let dirX = toX - fromX;
-    let dirY = toY - fromY;
-    const length = Math.hypot(dirX, dirY);
-    if (length > 1e-6) {
-      dirX /= length;
-      dirY /= length;
-    } else {
-      dirX = 0;
-      dirY = 0;
-    }
+    const frame = { dirX, dirY, distance: strokeDistance, seedX: strokeSeedX, seedY: strokeSeedY };
     const params = {
       radius,
       strength: alpha,
       smear: store.knifeSmear,
-      soft: store.softBrush,
-      pencil: false,
+      brush,
+      angle: brush.angle,
+      frame,
       selection: store.selection,
       layerOffsetX: offsetX,
       layerOffsetY: offsetY,
@@ -1893,23 +1941,37 @@ function paintStrokeSegment(
     };
     forEachStamp(fromX, fromY, toX, toY, radius, (x, y) => knifeStamp(strokeImage!, x, y, params));
   } else {
-    const params = {
-      radius,
-      color: store.foreground,
-      alpha,
-      selection: store.selection,
-      erase: strokeKind === 'eraser',
-      soft: store.softBrush,
-      pencil,
-      offsetX,
-      offsetY,
-    };
-    if (fromX === toX && fromY === toY) {
-      stampBrush(strokeImage, toX, toY, params);
-    } else {
-      paintStroke(strokeImage, fromX, fromY, toX, toY, params);
+    // Brush / eraser: stamp along the segment, advancing the stroke-space
+    // distance so the texture travels with the brush, and jittering the tip.
+    const spacing = Math.max(0.5, radius * brush.spacing);
+    const steps = Math.max(1, Math.ceil(segmentLength / spacing));
+    for (let i = 1; i <= steps; i++) {
+      const t = i / steps;
+      const x = fromX + (toX - fromX) * t;
+      const y = fromY + (toY - fromY) * t;
+      const angleOffset =
+        brush.rotationJitter > 0
+          ? (hash01(strokeJitterSeed + strokeStampIndex * 2654435761) * 2 - 1) * brush.rotationJitter
+          : 0;
+      strokeStampIndex++;
+      const params = {
+        radius,
+        color: store.foreground,
+        alpha,
+        selection: store.selection,
+        erase: strokeKind === 'eraser',
+        brush,
+        angle: brush.angle + angleOffset,
+        frame: { dirX, dirY, distance: strokeDistance + segmentLength * t, seedX: strokeSeedX, seedY: strokeSeedY },
+        strokeMask,
+        strokeBase,
+        offsetX,
+        offsetY,
+      };
+      stampBrush(strokeImage, x, y, params);
     }
   }
+  strokeDistance += segmentLength;
   store.notify();
 }
 
@@ -2277,8 +2339,8 @@ function render(): void {
     resizeHeightInput.value = String(store.height);
   }
   brushSwatch.style.background = `rgb(${store.foreground.r}, ${store.foreground.g}, ${store.foreground.b})`;
-  softBrushCheckbox.checked = store.softBrush;
-  pencilCheckbox.checked = store.pencilBrush;
+  brushSelect.value = store.brushId;
+  knifeSelect.value = store.brushId;
   if (document.activeElement !== knifeSizeInput) {
     knifeSizeInput.value = String(store.brushSize);
   }
@@ -2288,7 +2350,6 @@ function render(): void {
   if (document.activeElement !== knifeSmearInput) {
     knifeSmearInput.value = String(Math.round(store.knifeSmear * 100));
   }
-  knifeSoftCheckbox.checked = store.softBrush;
 
   const tool = store.activeTool;
   const showKnife = tool === 'knife';

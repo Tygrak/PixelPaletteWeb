@@ -7,6 +7,19 @@ export function createEmptyImage(width: number, height: number): ImageData {
   return new ImageData(width, height);
 }
 
+// Creates an opaque image filled with a single color.
+export function fillImage(width: number, height: number, color: RGB): ImageData {
+  const img = createEmptyImage(width, height);
+  const data = img.data;
+  for (let i = 0; i < width * height; i++) {
+    data[i * 4] = color.r;
+    data[i * 4 + 1] = color.g;
+    data[i * 4 + 2] = color.b;
+    data[i * 4 + 3] = 255;
+  }
+  return img;
+}
+
 export function setPixel(img: ImageData, x: number, y: number, color: RGB): void {
   const index = (x + y * img.width) * 4;
   img.data[index] = color.r;

@@ -1,5 +1,6 @@
 // Tool definitions, keyboard shortcuts, and brush/eraser painting.
 
+import { Brush, brushCoverage, TextureFrame } from './brushes';
 import { RGB } from './color';
 import { Selection } from './selection';
 
@@ -56,10 +57,18 @@ export interface BrushParams {
   alpha: number;
   selection: Selection | null;
   erase: boolean;
-  // Feather the brush edge: alpha falls off with distance from the center.
-  soft: boolean;
-  // Hard pixel edges: paint the exact pixels with no antialiasing.
-  pencil: boolean;
+  // Tip shape, falloff and texture.
+  brush: Brush;
+  // Effective tip rotation for this stamp (base angle + any random jitter).
+  angle: number;
+  // Stroke-space texture frame (null = sample in tip-local space).
+  frame: TextureFrame | null;
+  // Optional per-stroke coverage cap; lets textured brushes keep their grain.
+  strokeMask: Float32Array | null;
+  // Snapshot of the layer's pixels at stroke start. Masked (textured) strokes
+  // blend against this so the result is exactly alpha*coverage, no matter how
+  // many overlapping stamps build the coverage.
+  strokeBase: Uint8ClampedArray | null;
   // Active-layer offset, so strokes are painted in document space (selection
   // masks are also in document space).
   offsetX: number;
@@ -75,11 +84,13 @@ export function stampBrush(
   const { width, height, data } = image;
   const radius = Math.max(0.5, params.radius);
   const alpha = params.alpha;
-  const { offsetX, offsetY, color, selection, erase, soft } = params;
-  const minX = Math.max(0, Math.floor(centerX - radius - 1));
-  const maxX = Math.min(width - 1, Math.ceil(centerX + radius + 1));
-  const minY = Math.max(0, Math.floor(centerY - radius - 1));
-  const maxY = Math.min(height - 1, Math.ceil(centerY + radius + 1));
+  const { offsetX, offsetY, color, selection, erase, brush } = params;
+  // Edge-textured brushes can bulge slightly past the nominal radius.
+  const reach = radius + 1 + (brush.edgeTexture > 0 ? radius * 0.4 : 0);
+  const minX = Math.max(0, Math.floor(centerX - reach));
+  const maxX = Math.min(width - 1, Math.ceil(centerX + reach));
+  const minY = Math.max(0, Math.floor(centerY - reach));
+  const maxY = Math.min(height - 1, Math.ceil(centerY + reach));
 
   for (let docY = minY; docY <= maxY; docY++) {
     const layerY = docY - offsetY;
@@ -95,17 +106,30 @@ export function stampBrush(
       if (selection && !selection[docIndex]) {
         continue;
       }
-      const coverage = coverageAt(docX, docY, centerX, centerY, radius, soft, params.pencil);
-      if (coverage <= 0) {
-        continue;
-      }
-      const a = alpha * coverage;
-      if (a <= 0) {
+      const target = brushCoverage(brush, docX, docY, centerX, centerY, radius, params.angle, params.frame);
+      if (target <= 0) {
         continue;
       }
       const pos = (layerX + layerY * width) * 4;
+      // For masked (textured) strokes the destination is recomputed from the
+      // stroke's base snapshot using the total coverage so far, so overlapping
+      // stamps can never push the result past alpha*coverage or leave it below
+      // it. Unmasked strokes composite incrementally as before.
+      let src: Uint8ClampedArray = data;
+      if (params.strokeMask && params.strokeBase) {
+        const maskIndex = layerX + layerY * width;
+        if (target <= params.strokeMask[maskIndex]) {
+          continue;
+        }
+        params.strokeMask[maskIndex] = target;
+        src = params.strokeBase;
+      }
+      const a = alpha * target;
+      if (a <= 0) {
+        continue;
+      }
       if (erase) {
-        const destAlpha = data[pos + 3] / 255;
+        const destAlpha = src[pos + 3] / 255;
         const newAlpha = destAlpha * (1 - a);
         data[pos + 3] = Math.round(newAlpha * 255);
         if (newAlpha <= 0.002) {
@@ -114,36 +138,17 @@ export function stampBrush(
           data[pos + 2] = 0;
         }
       } else {
-        const destAlpha = data[pos + 3] / 255;
+        const destAlpha = src[pos + 3] / 255;
         const outAlpha = a + destAlpha * (1 - a);
         if (outAlpha <= 0) {
           continue;
         }
-        data[pos] = Math.round((color.r * a + data[pos] * destAlpha * (1 - a)) / outAlpha);
-        data[pos + 1] = Math.round((color.g * a + data[pos + 1] * destAlpha * (1 - a)) / outAlpha);
-        data[pos + 2] = Math.round((color.b * a + data[pos + 2] * destAlpha * (1 - a)) / outAlpha);
+        data[pos] = Math.round((color.r * a + src[pos] * destAlpha * (1 - a)) / outAlpha);
+        data[pos + 1] = Math.round((color.g * a + src[pos + 1] * destAlpha * (1 - a)) / outAlpha);
+        data[pos + 2] = Math.round((color.b * a + src[pos + 2] * destAlpha * (1 - a)) / outAlpha);
         data[pos + 3] = Math.round(outAlpha * 255);
       }
     }
-  }
-}
-
-// Paints a continuous stroke between two points so fast pointer movements do
-// not leave gaps. Returns nothing; mutates the image in place.
-export function paintStroke(
-  image: ImageData,
-  fromX: number,
-  fromY: number,
-  toX: number,
-  toY: number,
-  params: BrushParams,
-): void {
-  const distance = Math.sqrt((toX - fromX) ** 2 + (toY - fromY) ** 2);
-  const step = Math.max(0.5, params.radius / 3);
-  const steps = Math.max(1, Math.ceil(distance / step));
-  for (let i = 1; i <= steps; i++) {
-    const t = i / steps;
-    stampBrush(image, fromX + (toX - fromX) * t, fromY + (toY - fromY) * t, params);
   }
 }
 
@@ -156,61 +161,12 @@ export interface FillParams {
   offsetY: number;
 }
 
-// Shared brush-edge coverage: soft fades smoothly to the rim, hard is crisp
-// with a 1px antialiased edge, pencil is fully hard (exact pixels, no AA).
-function coverageFor(distance: number, radius: number, soft: boolean): number {
-  if (soft) {
-    const t = 1 - distance / radius;
-    if (t <= 0) {
-      return 0;
-    }
-    return t * t * (3 - 2 * t);
-  }
-  const coverage = radius - distance + 0.5;
-  if (coverage <= 0) {
-    return 0;
-  }
-  return coverage > 1 ? 1 : coverage;
-}
-
-// The exact set of pixel offsets a pencil of the given size (diameter) paints,
-// relative to the cursor pixel. Shared by stamping and the on-screen cursor.
-export function pencilOffsets(size: number): { dx: number; dy: number }[] {
-  const radius = Math.max(0.5, size / 2);
-  const half = Math.ceil(radius);
-  const offsets: { dx: number; dy: number }[] = [];
-  for (let dy = -half; dy <= half; dy++) {
-    for (let dx = -half; dx <= half; dx++) {
-      if (dx * dx + dy * dy <= radius * radius) {
-        offsets.push({ dx, dy });
-      }
-    }
-  }
-  return offsets;
-}
-
-function coverageAt(
-  docX: number,
-  docY: number,
-  centerX: number,
-  centerY: number,
-  radius: number,
-  soft: boolean,
-  pencil: boolean,
-): number {
-  if (pencil) {
-    const dx = docX - Math.floor(centerX);
-    const dy = docY - Math.floor(centerY);
-    return dx * dx + dy * dy <= radius * radius ? 1 : 0;
-  }
-  return coverageFor(Math.hypot(docX - centerX, docY - centerY), radius, soft);
-}
-
 export interface CloneParams {
   radius: number;
   alpha: number;
-  soft: boolean;
-  pencil: boolean;
+  brush: Brush;
+  angle: number;
+  frame: TextureFrame | null;
   selection: Selection | null;
   layerOffsetX: number;
   layerOffsetY: number;
@@ -237,12 +193,12 @@ export function cloneStamp(
   const maxY = Math.min(height - 1, Math.ceil(centerY + radius + 1));
 
   for (let docY = minY; docY <= maxY; docY++) {
-    const layerY = docY - params.layerOffsetY;
+    const layerY = Math.floor(docY - params.layerOffsetY);
     if (layerY < 0 || layerY >= height) {
       continue;
     }
     for (let docX = minX; docX <= maxX; docX++) {
-      const layerX = docX - params.layerOffsetX;
+      const layerX = Math.floor(docX - params.layerOffsetX);
       if (layerX < 0 || layerX >= width) {
         continue;
       }
@@ -250,12 +206,14 @@ export function cloneStamp(
       if (params.selection && !params.selection[docIndex]) {
         continue;
       }
-      const coverage = coverageAt(docX, docY, centerX, centerY, radius, params.soft, params.pencil);
+      const coverage = brushCoverage(params.brush, docX, docY, centerX, centerY, radius, params.angle, params.frame, false);
       if (coverage <= 0) {
         continue;
       }
-      const sourceX = layerX - params.cloneOffsetX;
-      const sourceY = layerY - params.cloneOffsetY;
+      // The clone offset comes from fractional pointer coordinates, so snap the
+      // sampled source to whole pixels before indexing the buffer.
+      const sourceX = Math.floor(layerX - params.cloneOffsetX);
+      const sourceY = Math.floor(layerY - params.cloneOffsetY);
       if (sourceX < 0 || sourceX >= width || sourceY < 0 || sourceY >= height) {
         continue;
       }
@@ -287,8 +245,9 @@ export function cloneStamp(
 export interface HealParams {
   radius: number;
   alpha: number;
-  soft: boolean;
-  pencil: boolean;
+  brush: Brush;
+  angle: number;
+  frame: TextureFrame | null;
   selection: Selection | null;
   layerOffsetX: number;
   layerOffsetY: number;
@@ -366,7 +325,8 @@ export function healStamp(
       if (params.selection && !params.selection[docX + docY * width]) {
         continue;
       }
-      const coverage = coverageAt(docX, docY, centerX, centerY, radius, params.soft, params.pencil);
+      // Heal also uses the tip shape only (no grain).
+      const coverage = brushCoverage(params.brush, docX, docY, centerX, centerY, radius, params.angle, params.frame, false);
       if (coverage <= 0) {
         continue;
       }
@@ -395,8 +355,9 @@ export interface KnifeParams {
   // How far behind the cursor to sample the dragged paint, as a fraction of
   // the radius. Larger values smear further along the stroke.
   smear: number;
-  soft: boolean;
-  pencil: boolean;
+  brush: Brush;
+  angle: number;
+  frame: TextureFrame | null;
   selection: Selection | null;
   layerOffsetX: number;
   layerOffsetY: number;
@@ -443,7 +404,8 @@ export function knifeStamp(target: ImageData, centerX: number, centerY: number, 
       if (selection && !selection[docIndex]) {
         continue;
       }
-      const coverage = coverageAt(docX, docY, centerX, centerY, radius, params.soft, params.pencil);
+      // Knife uses the tip shape only (no grain).
+      const coverage = brushCoverage(params.brush, docX, docY, centerX, centerY, radius, params.angle, params.frame, false);
       if (coverage <= 0) {
         continue;
       }

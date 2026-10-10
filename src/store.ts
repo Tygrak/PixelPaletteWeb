@@ -1,5 +1,6 @@
+import { Brush, brushById, DEFAULT_BRUSH_ID } from './brushes';
 import { rgb, RGB } from './color';
-import { cloneImage, placeImageCentered, resizeCanvasImage, resizeImage } from './image';
+import { cloneImage, createEmptyImage, fillImage, placeImageCentered, resizeCanvasImage, resizeImage } from './image';
 import { compositeLayers, copyLayer, createLayer, duplicateLayer as duplicateLayerData, Layer } from './layers';
 import { Selection } from './selection';
 import { loadSettings, saveSettings, Settings } from './settings';
@@ -55,8 +56,7 @@ export class Store {
   foreground: RGB = rgb(0, 0, 0);
   brushSize = 24;
   brushOpacity = 1;
-  softBrush = false;
-  pencilBrush = false;
+  brushId = DEFAULT_BRUSH_ID;
   knifeSmear = 0.6;
   wandTolerance = 32;
   fillTolerance = 32;
@@ -219,6 +219,32 @@ export class Store {
     const frame = makeFrame();
     frame.layers = [createLayer(img.width, img.height, 'Background', cloneImage(img))];
     frame.activeIndex = 0;
+    this.frames = [frame];
+    this.currentFrame = 0;
+    this.selection = null;
+    this.notify();
+  }
+
+  // Creates a fresh blank document. When `background` is given, an opaque
+  // "Background" layer is added with a blank "Layer 1" above it (which becomes
+  // the active layer); otherwise the document starts with only "Layer 1".
+  newDocument(width: number, height: number, background: RGB | null): void {
+    this.width = width;
+    this.height = height;
+    const frame = makeFrame();
+    if (background) {
+      const backgroundImage = fillImage(width, height, background);
+      this.initial = cloneImage(backgroundImage);
+      frame.layers = [
+        createLayer(width, height, 'Background', backgroundImage),
+        createLayer(width, height, 'Layer 1'),
+      ];
+      frame.activeIndex = 1;
+    } else {
+      this.initial = createEmptyImage(width, height);
+      frame.layers = [createLayer(width, height, 'Layer 1')];
+      frame.activeIndex = 0;
+    }
     this.frames = [frame];
     this.currentFrame = 0;
     this.selection = null;
@@ -570,13 +596,13 @@ export class Store {
     this.emit();
   }
 
-  setSoftBrush(soft: boolean): void {
-    this.softBrush = soft;
-    this.emit();
+  // The active brush tip (shape, falloff, texture) selected from BRUSHES.
+  get brush(): Brush {
+    return brushById(this.brushId);
   }
 
-  setPencilBrush(pencil: boolean): void {
-    this.pencilBrush = pencil;
+  setBrush(brushId: string): void {
+    this.brushId = brushId;
     this.emit();
   }
 
