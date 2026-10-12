@@ -1,5 +1,6 @@
 import './style.css';
-import { BRUSHES, brushFootprint, pressureFactor } from './brushes';
+import { allBrushes, onBrushesChanged } from './brushLibrary';
+import { brushFootprint, DEFAULT_BRUSH_ID, pressureFactor, textureModulates } from './brushes';
 import { clamp, colorToHex, hexToColor, rgb, RGB } from './color';
 import { AppContext } from './context';
 import { confirmDialog, DockPanel, h } from './dom';
@@ -666,14 +667,17 @@ const pickForegroundButton = h('button', {
     store.setForeground(chosen);
   },
 });
+// Brush pickers list the brush library (defaults plus user edits and custom
+// brushes); they are rebuilt whenever the library changes in the settings.
+function fillBrushSelect(select: HTMLSelectElement): void {
+  select.replaceChildren(...allBrushes().map((brush) => h('option', { value: brush.id, text: brush.label })));
+  select.value = store.brushId;
+}
 function createBrushSelect(): HTMLSelectElement {
   const select = h('select', { class: 'select' });
-  for (const brush of BRUSHES) {
-    select.append(h('option', { value: brush.id, text: brush.label }));
-  }
-  select.value = store.brushId;
   select.title = 'Brush tip shape and texture.';
   select.addEventListener('change', () => store.setBrush(select.value));
+  fillBrushSelect(select);
   return select;
 }
 const brushSelect = createBrushSelect();
@@ -712,6 +716,14 @@ const knifeSection = h('div', { class: 'options-section' }, [
   h('span', { class: 'row-label', text: 'Smear' }),
   knifeSmearInput,
 ]);
+onBrushesChanged(() => {
+  // A custom brush that was deleted may still be the active one; fall back to Round.
+  if (!allBrushes().some((brush) => brush.id === store.brushId)) {
+    store.setBrush(DEFAULT_BRUSH_ID);
+  }
+  fillBrushSelect(brushSelect);
+  fillBrushSelect(knifeSelect);
+});
 
 const wandToleranceInput = numberInput(store.wandTolerance, 0, 255, 1, () =>
   store.setWandTolerance(readNumber(wandToleranceInput)),
@@ -741,16 +753,18 @@ function renderPaletteStrip(): void {
   lastPaletteSignature = signature;
   const foregroundHex = colorToHex(store.foreground);
   paletteStrip.replaceChildren();
-  for (const color of store.palette) {
+  store.palette.forEach((color, index) => {
     const hex = colorToHex(color);
+    // The first ten entries are reachable with the number row (1-9, then 0).
+    const keyHint = index < 9 ? String(index + 1) : index === 9 ? '0' : '';
     const dot = h('button', {
       class: `palette-dot${hex === foregroundHex ? ' active' : ''}`,
-      title: hex,
+      title: keyHint ? `${hex} (${keyHint})` : hex,
       onclick: () => store.setForeground(color),
     });
     dot.style.background = hex;
     paletteStrip.append(dot);
-  }
+  });
 }
 const paletteSection = h('div', { class: 'options-section palette-section' }, [
   h('span', { class: 'row-label', text: 'Palette' }),
@@ -1464,7 +1478,7 @@ canvas.addEventListener('pointerdown', (event) => {
       strokeImage = image;
       strokeLastX = point.x;
       strokeLastY = point.y;
-      beginStrokeState(store.brush.texture.strength > 0, image);
+      beginStrokeState(textureModulates(store.brush.texture), image);
       paintStrokeSegment(point.x, point.y, point.x, point.y, pointerPressure(event));
       break;
     }
@@ -2165,6 +2179,13 @@ window.addEventListener('keydown', (event) => {
     return;
   }
   if (typing || ctrl) {
+    return;
+  }
+  // Number keys pick palette colors: 1-9 select the first nine entries, 0 the tenth.
+  const paletteIndex = event.key >= '0' && event.key <= '9' ? (event.key === '0' ? 9 : Number(event.key) - 1) : -1;
+  if (paletteIndex >= 0 && paletteIndex < store.palette.length) {
+    event.preventDefault();
+    store.setForeground(store.palette[paletteIndex]);
     return;
   }
   if (event.key === 'Delete' || event.key === 'Backspace') {

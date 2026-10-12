@@ -8,10 +8,12 @@
 //
 // Texture is sampled in *stroke space*: the coordinate advances along the
 // stroke (arc length) and across it, so the grain travels with the brush instead
-// of sitting still on the canvas like a document-space pattern. Because a given
-// canvas pixel sees a stable texture value for the whole stroke, textured
-// brushes can cap their coverage at that value, so grain survives at full
-// opacity instead of filling in from overlapping stamps.
+// of sitting still on the canvas like a document-space pattern. Brushes can opt
+// into document space instead (documentTexture), which pins the pattern to the
+// canvas so separate strokes line up (used by the hatching brush). Either way a
+// given canvas pixel sees a stable texture value for the whole stroke, so
+// textured brushes can cap their coverage at that value, and grain survives at
+// full opacity instead of filling in from overlapping stamps.
 
 // Per-brush pressure response. `min` is the factor at zero pressure and `curve`
 // shapes the ramp; a `min` of 1 ignores pressure entirely.
@@ -28,8 +30,12 @@ export interface BrushTexture {
   kind: TextureKind;
   // Feature size in pixels (larger = coarser grain).
   scale: number;
-  // How strongly the texture multiplies the brush (0 = off, 1 = full).
-  strength: number;
+  // Coverage where the texture is darkest. 0 lets gaps go fully clear, higher
+  // values keep a floor of transparency in them.
+  min: number;
+  // Coverage where the texture is lightest. 1 lets the texture reach full
+  // opacity; lower values keep even the highlights transparent.
+  max: number;
   // Line orientation for directional textures (radians), relative to the stroke.
   angle: number;
   // Pushes texture values toward 0/1 so marks stay opaque and the texture
@@ -64,6 +70,10 @@ export interface Brush {
   // 1 = texture only around the rim while the core stays solid (charcoal-like
   // edges); 0 = texture across the whole tip.
   edgeTexture: number;
+  // true = the texture is pinned to the document (a fixed pattern on the
+  // canvas) instead of travelling with the stroke. Repeated strokes line up
+  // exactly, which is what hatching needs.
+  documentTexture: boolean;
 }
 
 // The stroke-space frame a stamp samples its texture in.
@@ -75,13 +85,15 @@ export interface TextureFrame {
   seedY: number;
 }
 
-function tex(kind: TextureKind, scale: number, strength: number, contrast = 0, angle = 0): BrushTexture {
-  return { kind, scale, strength, angle, contrast };
+function tex(kind: TextureKind, scale: number, min: number, max: number, contrast = 0, angle = 0): BrushTexture {
+  return { kind, scale, min, max, angle, contrast };
 }
-const NONE = tex('none', 1, 0);
+const NONE = tex('none', 1, 0, 1);
 
 export const DEFAULT_BRUSH_ID = 'default';
 
+// Built-in default brushes. User edits and custom brushes are layered on top
+// of these in brushLibrary.ts, which is what the app reads at runtime.
 export const BRUSHES: Brush[] = [
   {
     id: 'default',
@@ -99,6 +111,7 @@ export const BRUSHES: Brush[] = [
     lobeDepth: 0,
     rotationJitter: 0,
     edgeTexture: 0,
+    documentTexture: false,
   },
   {
     id: 'soft',
@@ -115,6 +128,7 @@ export const BRUSHES: Brush[] = [
     lobeDepth: 0,
     rotationJitter: 0,
     edgeTexture: 0,
+    documentTexture: false,
   },
   {
     id: 'pixel',
@@ -132,6 +146,7 @@ export const BRUSHES: Brush[] = [
     lobeDepth: 0,
     rotationJitter: 0,
     edgeTexture: 0,
+    documentTexture: false,
   },
   {
     id: 'charcoal',
@@ -143,14 +158,35 @@ export const BRUSHES: Brush[] = [
     hardness: 0.55,
     antialias: true,
     pixel: false,
-    pressure: { sizeMin: 0.35, sizeCurve: 1, alphaMin: 0.25, alphaCurve: 1 },
+    // Pressure thins the tip only; opacity stays full so strokes build up
+    // from overlap rather than from pressure.
+    pressure: { sizeMin: 0.35, sizeCurve: 1, alphaMin: 1, alphaCurve: 1 },
     spacing: 0.08,
     // Grain that builds smoothly from a near-solid core out to a crumbly rim.
+    texture: tex('chalk', 3, 0.4, 1, 0.5),
+    lobes: 1,
+    lobeDepth: 0,
+    rotationJitter: 0,
+    edgeTexture: 1,
+    documentTexture: false,
+  },
+  {
+    id: 'charcoal-pressure',
+    label: 'Charcoal Pencil (Pressure)',
+    // Same tip as charcoal, but pressure also fades opacity.
+    roundness: 1,
+    angle: 0,
+    hardness: 0.55,
+    antialias: true,
+    pixel: false,
+    pressure: { sizeMin: 0.35, sizeCurve: 1, alphaMin: 0.25, alphaCurve: 1 },
+    spacing: 0.08,
     texture: tex('chalk', 3, 0.6, 0.5),
     lobes: 1,
     lobeDepth: 0,
     rotationJitter: 0,
     edgeTexture: 1,
+    documentTexture: false,
   },
   {
     id: 'gpen',
@@ -168,6 +204,7 @@ export const BRUSHES: Brush[] = [
     lobeDepth: 0,
     rotationJitter: 0,
     edgeTexture: 0,
+    documentTexture: false,
   },
   {
     id: 'chalk',
@@ -179,11 +216,12 @@ export const BRUSHES: Brush[] = [
     pixel: false,
     pressure: { sizeMin: 0.5, sizeCurve: 1, alphaMin: 0.18, alphaCurve: 1.2 },
     spacing: 0.07,
-    texture: tex('grain', 2.4, 0.85, 0.7),
+    texture: tex('grain', 2.4, 0.15, 1, 0.7),
     lobes: 1,
     lobeDepth: 0,
     rotationJitter: 0,
     edgeTexture: 0,
+    documentTexture: false,
   },
   {
     id: 'texturing',
@@ -196,17 +234,36 @@ export const BRUSHES: Brush[] = [
     pixel: false,
     pressure: { sizeMin: 0.4, sizeCurve: 1, alphaMin: 0.3, alphaCurve: 1 },
     spacing: 0.14,
-    texture: tex('grain', 3.4, 0.9, 0.72),
+    texture: tex('grain', 3.4, 0.1, 1, 0.72),
     lobes: 5,
     lobeDepth: 0.55,
     rotationJitter: 2.4,
     edgeTexture: 0,
+    documentTexture: false,
+  },
+  {
+    id: 'hatching',
+    label: 'Hatching',
+    // A round tip whose hatch lines are pinned to the document, so successive
+    // strokes line up into regular diagonal shading. The per-stroke coverage
+    // cap keeps a stroke from stacking past the set opacity no matter how much
+    // it overlaps itself.
+    roundness: 1,
+    angle: 0,
+    hardness: 1,
+    antialias: true,
+    pixel: true,
+    pressure: { sizeMin: 0.5, sizeCurve: 1, alphaMin: 0.5, alphaCurve: 1 },
+    spacing: 0.05,
+    // 45-degree lines in document space, one every `scale` pixels.
+    texture: tex('hatch', 5, 0, 1, 0.75, Math.PI / 4),
+    lobes: 1,
+    lobeDepth: 0,
+    rotationJitter: 0,
+    edgeTexture: 0,
+    documentTexture: true,
   },
 ];
-
-export function brushById(id: string): Brush {
-  return BRUSHES.find((brush) => brush.id === id) ?? BRUSHES[0];
-}
 
 // Applies a brush's pressure curve; `pressure` is 0..1.
 export function pressureFactor(min: number, curve: number, pressure: number): number {
@@ -305,14 +362,24 @@ function applyContrast(value: number, contrast: number): number {
   return t * t * (3 - 2 * t);
 }
 
-// Texture multiplier in [1 - strength, 1]; multiplies whatever coverage the
-// brush shape produced so soft edges and textures compose naturally.
+// Texture coverage in [min, max]; multiplies whatever coverage the brush shape
+// produced so soft edges and textures compose naturally. `min` is the coverage
+// where the texture is darkest and `max` where it is lightest, so a texture can
+// both break marks up with gaps and stay short of full opacity.
 export function textureValue(texture: BrushTexture, x: number, y: number): number {
-  if (texture.kind === 'none' || texture.strength <= 0) {
+  if (texture.kind === 'none') {
     return 1;
   }
   const value = applyContrast(rawTexture(texture, x, y), texture.contrast);
-  return 1 - texture.strength * (1 - value);
+  const min = clamp01(texture.min);
+  const max = clamp01(texture.max);
+  return min + (max - min) * value;
+}
+
+// True when a texture actually modulates coverage. Strokes using one need the
+// per-stroke coverage cap so overlapping stamps do not fill the grain in.
+export function textureModulates(texture: BrushTexture): boolean {
+  return texture.kind !== 'none' && (clamp01(texture.min) < 1 || clamp01(texture.max) < 1);
 }
 
 // --- Brush tip coverage ---
@@ -390,7 +457,12 @@ export function brushCoverage(
   }
   let texX: number;
   let texY: number;
-  if (frame) {
+  if (brush.documentTexture) {
+    // Document-space texture: pinned to the canvas, so overlapping strokes
+    // repeat the same pattern instead of each carrying its own.
+    texX = docX;
+    texY = docY;
+  } else if (frame) {
     texX = frame.distance + dx * frame.dirX + dy * frame.dirY + frame.seedX;
     texY = -dx * frame.dirY + dy * frame.dirX + frame.seedY;
   } else {
@@ -399,10 +471,10 @@ export function brushCoverage(
     texX = dx * cos + dy * sin;
     texY = -dx * sin + dy * cos;
   }
-  const hasTexture = applyTexture && brush.texture.kind !== 'none' && brush.texture.strength > 0;
+  const hasTexture = applyTexture && textureModulates(brush.texture);
 
   if (hasTexture && brush.edgeTexture > 0) {
-    // Texture runs through the whole tip but its strength ramps smoothly with
+    // Texture runs through the whole tip but its influence ramps smoothly with
     // radius (quadratic), so the core reads as solid while the grain builds
     // toward the rim. Because the same material covers the entire stroke there
     // is no seam between a "solid" and a "textured" brush.

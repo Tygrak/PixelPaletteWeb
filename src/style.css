@@ -778,6 +778,65 @@ input[type='checkbox'] {
   outline-offset: 1px;
 }
 
+/* --- Brush editor (Settings panel) --- */
+.brush-settings-wrap {
+  margin-top: 12px;
+  border-top: 1px solid var(--border);
+  padding-top: 2px;
+}
+
+.brush-settings-toggle {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  width: 100%;
+  padding: 8px 6px;
+  background: transparent;
+  border: none;
+  border-radius: 3px;
+  color: var(--text);
+  font: inherit;
+  font-weight: 600;
+  text-align: left;
+  cursor: pointer;
+}
+
+.brush-settings-toggle:hover {
+  background: var(--bg-control-hover);
+}
+
+.brush-settings-arrow {
+  display: inline-block;
+  font-size: 10px;
+  transition: transform 0.12s;
+}
+
+.brush-settings-wrap.open .brush-settings-arrow {
+  transform: rotate(90deg);
+}
+
+.brush-settings {
+  display: none;
+}
+
+.brush-settings-wrap.open .brush-settings {
+  display: block;
+}
+
+.brush-settings .row {
+  margin: 6px 0;
+}
+
+.brush-settings .divider {
+  margin: 8px 0;
+}
+
+.brush-group-title {
+  margin: 14px 0 2px;
+  font-weight: 600;
+  color: #8f9998;
+}
+
 /* --- Resize drag preview --- */
 .resize-preview {
   position: absolute;

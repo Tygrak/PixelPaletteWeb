@@ -2,12 +2,15 @@ import { colorToHex, hexToColor } from '../color';
 import { AppContext } from '../context';
 import { createDockPanel, DockPanel, h, rowHint } from '../dom';
 import type { CanvasBackdrop } from '../settings';
+import { createBrushSettingsSection } from './brushSettings';
 
 export function openSettingsPanel(ctx: AppContext, onClose?: () => void): DockPanel {
   const { store } = ctx;
   let unlisten: (() => void) | null = null;
+  const brushSettings = createBrushSettingsSection(store);
   const panel = createDockPanel(ctx.dock, 'Settings', () => {
     unlisten?.();
+    brushSettings.dispose();
     onClose?.();
   });
 
@@ -85,6 +88,7 @@ export function openSettingsPanel(ctx: AppContext, onClose?: () => void): DockPa
         'Show the timeline at the bottom to add frames, reorder them and play the animation.',
         animationCheckbox,
       ),
+      brushSettings.root,
     ]),
   );
 

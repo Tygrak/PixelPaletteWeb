@@ -1,4 +1,5 @@
-import { Brush, brushById, DEFAULT_BRUSH_ID } from './brushes';
+import { brushById } from './brushLibrary';
+import { Brush, DEFAULT_BRUSH_ID } from './brushes';
 import { rgb, RGB } from './color';
 import { cloneImage, createEmptyImage, fillImage, placeImageCentered, resizeCanvasImage, resizeImage } from './image';
 import { compositeLayers, copyLayer, createLayer, duplicateLayer as duplicateLayerData, Layer } from './layers';
@@ -596,7 +597,8 @@ export class Store {
     this.emit();
   }
 
-  // The active brush tip (shape, falloff, texture) selected from BRUSHES.
+  // The active brush tip (shape, falloff, texture) selected from the brush
+  // library (built-in defaults plus user edits and custom brushes).
   get brush(): Brush {
     return brushById(this.brushId);
   }
