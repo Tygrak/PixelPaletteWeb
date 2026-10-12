@@ -1,1 +1,2 @@
 -resize tool dropwdown selecting whether you are scaling, resizing extend color, resizing to emptyness
+-color picker make nicer

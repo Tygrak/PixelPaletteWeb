@@ -326,7 +326,7 @@ const statusText = h('span', { class: 'status' });
 const ctx: AppContext = {
   store,
   dock,
-  selectColor: (initial) => selectColorDialog(initial),
+  selectColor: (initial, onChange) => selectColorDialog(initial, onChange),
   applyImage: (img) => {
     commitFloating();
     store.changeMainImage(img);
@@ -666,8 +666,11 @@ const brushSwatch = h('span', { class: 'palette-swatch small' });
 const pickForegroundButton = h('button', {
   class: 'btn',
   text: 'Color',
+  title: 'Pick the paint color; changes apply to the brush immediately.',
   onclick: async () => {
-    const chosen = await ctx.selectColor(store.foreground);
+    // Live picker: every change (typing or sampling from the image) updates
+    // the brush color right away.
+    const chosen = await ctx.selectColor(store.foreground, (color) => store.setForeground(color));
     store.setForeground(chosen);
   },
 });
@@ -749,25 +752,54 @@ const bucketSection = h('div', { class: 'options-section' }, [
 
 const paletteStrip = h('div', { class: 'palette-strip' });
 let lastPaletteSignature = '';
+const paletteDots: HTMLButtonElement[] = [];
+
+function paletteKeyHint(index: number): string {
+  // The first ten entries are reachable with the number row (1-9, then 0).
+  return index < 9 ? String(index + 1) : index === 9 ? '0' : '';
+}
+
 function renderPaletteStrip(): void {
-  const signature = store.palette.map((color) => colorToHex(color)).join(',') + `|${colorToHex(store.foreground)}`;
-  if (signature === lastPaletteSignature) {
-    return;
-  }
-  lastPaletteSignature = signature;
   const foregroundHex = colorToHex(store.foreground);
-  paletteStrip.replaceChildren();
-  store.palette.forEach((color, index) => {
-    const hex = colorToHex(color);
-    // The first ten entries are reachable with the number row (1-9, then 0).
-    const keyHint = index < 9 ? String(index + 1) : index === 9 ? '0' : '';
-    const dot = h('button', {
-      class: `palette-dot${hex === foregroundHex ? ' active' : ''}`,
-      title: keyHint ? `${hex} (${keyHint})` : hex,
-      onclick: () => store.setForeground(color),
+  const paletteSignature = store.palette.map((color) => colorToHex(color)).join(',');
+  if (paletteSignature !== lastPaletteSignature) {
+    lastPaletteSignature = paletteSignature;
+    paletteStrip.replaceChildren();
+    paletteDots.length = 0;
+    store.palette.forEach((color, index) => {
+      const dot = h('button', {
+        class: 'palette-dot',
+        onclick: () => store.setForeground(store.palette[index]),
+      });
+      // Double click edits this palette entry in the color picker. When it is
+      // the selected (active) swatch, the edited color also becomes the
+      // current brush/text color.
+      dot.addEventListener('dblclick', async () => {
+        const wasActive = colorToHex(store.foreground) === colorToHex(store.palette[index]);
+        const chosen = await ctx.selectColor(store.palette[index]);
+        store.palette[index] = chosen;
+        if (wasActive) {
+          store.setForeground(chosen);
+        }
+        store.emit();
+      });
+      paletteStrip.append(dot);
+      paletteDots.push(dot);
     });
+  }
+  // Update the dots in place. Rebuilding them on every foreground change would
+  // destroy the element between the two clicks of a double click, which makes
+  // the second click (and the dblclick) land on a different element.
+  paletteDots.forEach((dot, index) => {
+    const color = store.palette[index];
+    if (!color) {
+      return;
+    }
+    const hex = colorToHex(color);
     dot.style.background = hex;
-    paletteStrip.append(dot);
+    dot.classList.toggle('active', hex === foregroundHex);
+    const keyHint = paletteKeyHint(index);
+    dot.title = keyHint ? `${hex} (${keyHint})` : hex;
   });
 }
 const paletteSection = h('div', { class: 'options-section palette-section' }, [
@@ -884,8 +916,9 @@ const textSwatch = h('span', { class: 'palette-swatch small' });
 const textPickButton = h('button', {
   class: 'btn',
   text: 'Color',
+  title: 'Pick the text color; changes apply immediately.',
   onclick: async () => {
-    const chosen = await ctx.selectColor(store.foreground);
+    const chosen = await ctx.selectColor(store.foreground, (color) => store.setForeground(color));
     store.setForeground(chosen);
   },
 });

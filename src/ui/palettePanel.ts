@@ -11,24 +11,44 @@ export function openPalettePanel(ctx: AppContext, onClose?: () => void): DockPan
   // --- Palette Colors tab ---
   let selectedIndex = -1;
   const list = h('div', { class: 'palette-list' });
+  let lastListSignature = '';
+  const listItems: HTMLElement[] = [];
 
   const renderList = (): void => {
-    list.replaceChildren();
-    store.palette.forEach((color, index) => {
-      const item = h('div', { class: `palette-item${index === selectedIndex ? ' selected' : ''}` }, [
-        h('span', { class: 'palette-hex', text: colorToHex(color) }),
-        colorSwatch(color, 'palette-swatch'),
-      ]);
-      item.addEventListener('click', () => {
-        selectedIndex = index;
-        renderList();
+    const signature = store.palette.map((color) => colorToHex(color)).join(',');
+    if (signature !== lastListSignature) {
+      lastListSignature = signature;
+      list.replaceChildren();
+      listItems.length = 0;
+      store.palette.forEach((color, index) => {
+        const item = h('div', { class: 'palette-item' }, [
+          h('span', { class: 'palette-hex', text: colorToHex(color) }),
+          colorSwatch(color, 'palette-swatch'),
+        ]);
+        item.addEventListener('click', () => {
+          selectedIndex = index;
+          renderList();
+        });
+        item.addEventListener('dblclick', async () => {
+          const wasActive = colorToHex(store.foreground) === colorToHex(store.palette[index]);
+          const result = await ctx.selectColor(store.palette[index]);
+          store.palette[index] = result;
+          // Editing the color that is currently in use also applies it as the
+          // current brush/text color.
+          if (wasActive) {
+            store.setForeground(result);
+          }
+          selectedIndex = index;
+          renderList();
+        });
+        list.append(item);
+        listItems.push(item);
       });
-      item.addEventListener('dblclick', async () => {
-        const result = await ctx.selectColor(color);
-        store.palette[index] = result;
-        renderList();
-      });
-      list.append(item);
+    }
+    // Update the selection in place: rebuilding the items on every click would
+    // destroy the element between the two clicks of a double click.
+    listItems.forEach((item, index) => {
+      item.classList.toggle('selected', index === selectedIndex);
     });
     store.emit();
   };

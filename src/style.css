@@ -562,9 +562,33 @@ input[type='checkbox'] {
 }
 
 /* --- Select color --- */
+.quick-picker {
+  display: flex;
+  gap: 8px;
+}
+
+.picker-square {
+  width: 154px;
+  height: 134px;
+  border: 2px solid #000;
+  border-radius: 4px;
+  cursor: crosshair;
+  touch-action: none;
+}
+
+.picker-hue {
+  width: 24px;
+  height: 134px;
+  border: 2px solid #000;
+  border-radius: 4px;
+  cursor: ns-resize;
+  touch-action: none;
+}
+
 .color-preview {
-  width: 220px;
-  height: 40px;
+  flex: 1;
+  min-width: 80px;
+  height: 130px;
   border: 2px solid #000;
   border-radius: 4px;
 }
