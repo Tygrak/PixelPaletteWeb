@@ -87,6 +87,9 @@ export interface Dialog {
   overlay: HTMLElement;
   body: HTMLElement;
   status: HTMLElement;
+  // Right-aligned button group in the footer. Callers can append extra action
+  // buttons next to the primary one so they sit in line.
+  actions: HTMLElement;
   primary: HTMLButtonElement;
   close: () => void;
 }
@@ -106,6 +109,7 @@ export function createDialog(
     text: primaryLabel,
     onclick: () => close(),
   });
+  const actions = h('div', { class: 'dialog-actions' }, [primary]);
   const windowEl = h('div', { class: 'dialog' }, [
     h('div', { class: 'dialog-title' }, [
       h('span', { text: title }),
@@ -114,7 +118,7 @@ export function createDialog(
         : [h('button', { class: 'dock-close', text: '✕', title: 'Close', onclick: () => close() })]),
     ]),
     body,
-    h('div', { class: 'dialog-footer' }, [status, primary]),
+    h('div', { class: 'dialog-footer' }, [status, actions]),
   ]);
   windowEl.style.width = `${width}px`;
   const overlay = h('div', { class: `overlay${modal ? '' : ' floating'}` }, [windowEl]);
@@ -127,7 +131,7 @@ export function createDialog(
     onClose?.();
   }
   document.body.append(overlay);
-  return { overlay, body, status, primary, close };
+  return { overlay, body, status, actions, primary, close };
 }
 
 // Shows a modal confirmation prompt and resolves true when the confirm button
@@ -144,10 +148,8 @@ export function confirmDialog(title: string, message: string, confirmLabel = 'OK
         dialog.close();
       },
     });
-    dialog.body.append(
-      h('div', { class: 'dialog-hint', text: message }),
-      h('div', { class: 'button-row' }, [confirmButton]),
-    );
+    dialog.body.append(h('div', { class: 'dialog-hint', text: message }));
+    dialog.actions.append(confirmButton);
     confirmButton.focus();
   });
 }

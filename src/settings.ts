@@ -15,6 +15,7 @@ export interface Settings {
   onionSkin: boolean;
   onionOpacity: number; // 0..1
   canvasBackdrop: CanvasBackdrop;
+  minimap: boolean; // overview in the bottom-right corner for panning while zoomed in
   saveFormat: SaveFormat;
   saveColumns: number; // 0 = auto
   saveFileName: string; // base name without extension
@@ -31,6 +32,7 @@ export const DEFAULT_SETTINGS: Settings = {
   onionSkin: false,
   onionOpacity: 0.4,
   canvasBackdrop: 'checker',
+  minimap: false,
   saveFormat: 'current',
   saveColumns: 0,
   saveFileName: 'image',

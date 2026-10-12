@@ -57,6 +57,13 @@ export function openSettingsPanel(ctx: AppContext, onClose?: () => void): DockPa
     store.updateSettings({ blankNewImage: blankCheckbox.checked }),
   );
 
+  const minimapCheckbox = document.createElement('input');
+  minimapCheckbox.type = 'checkbox';
+  minimapCheckbox.checked = store.settings.minimap;
+  minimapCheckbox.addEventListener('change', () =>
+    store.updateSettings({ minimap: minimapCheckbox.checked }),
+  );
+
   const backdropSelect = h('select', { class: 'select' }, [
     h('option', { value: 'checker', text: 'Checkerboard' }),
     h('option', { value: 'black', text: 'Pure black' }),
@@ -84,6 +91,11 @@ export function openSettingsPanel(ctx: AppContext, onClose?: () => void): DockPa
       ),
       rowHint('Image backdrop:', 'What is shown behind transparent pixels on the canvas.', backdropSelect),
       rowHint(
+        'Minimap:',
+        'Show a small overview of the image in the bottom-right corner; click or drag on it to pan while zoomed in.',
+        minimapCheckbox,
+      ),
+      rowHint(
         'Animation mode:',
         'Show the timeline at the bottom to add frames, reorder them and play the animation.',
         animationCheckbox,
@@ -103,6 +115,7 @@ export function openSettingsPanel(ctx: AppContext, onClose?: () => void): DockPa
     animationCheckbox.checked = store.settings.animationMode;
     backdropSelect.value = store.settings.canvasBackdrop;
     blankCheckbox.checked = store.settings.blankNewImage;
+    minimapCheckbox.checked = store.settings.minimap;
     pickButton.disabled = store.settings.blankNewImage;
     swatch.style.opacity = store.settings.blankNewImage ? '0.4' : '1';
   };

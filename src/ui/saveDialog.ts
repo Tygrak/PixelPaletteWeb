@@ -112,8 +112,9 @@ export function openSaveDialog(store: Store): void {
       ]),
       hint,
     ]),
-    h('div', { class: 'button-row' }, [saveButton]),
   );
+  // Save sits in the footer next to Cancel so both actions share one row.
+  dialog.actions.append(saveButton);
   updateVisibility();
   nameInput.focus();
   nameInput.select();

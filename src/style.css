@@ -305,6 +305,26 @@ body {
   display: none;
 }
 
+/* --- Minimap (optional, enabled in Settings) --- */
+.minimap {
+  position: absolute;
+  right: 10px;
+  bottom: 10px;
+  padding: 3px;
+  background: rgba(25, 26, 26, 0.85);
+  border: 2px solid #000;
+  border-radius: 4px;
+  box-shadow: 0 2px 8px rgba(0, 0, 0, 0.4);
+  z-index: 6;
+}
+
+.minimap-canvas {
+  display: block;
+  background: #3a3d3c;
+  cursor: pointer;
+  touch-action: none;
+}
+
 /* --- Buttons --- */
 .btn {
   background: var(--bg-control-hover);
@@ -405,7 +425,13 @@ input[type='checkbox'] {
   justify-content: space-between;
   gap: 10px;
   padding: 10px;
-  border-top: 2px solid #000;
+}
+
+.dialog-actions {
+  display: flex;
+  align-items: center;
+  gap: 12px;
+  margin-left: auto;
 }
 
 .dialog-status {

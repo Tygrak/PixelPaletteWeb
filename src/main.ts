@@ -299,6 +299,10 @@ const canvasPlaceholder = h('div', {
 const canvasArea = h('div', { class: 'canvas-area' }, [canvasStack, canvasPlaceholder]);
 const resizePreview = h('div', { class: 'resize-preview' });
 canvasArea.append(resizePreview);
+const minimapCanvas = h('canvas', { class: 'minimap-canvas' });
+const minimap = h('div', { class: 'minimap' }, [minimapCanvas]);
+minimap.style.display = 'none';
+canvasArea.append(minimap);
 
 const samplePreview = h('div', { class: 'sample-preview' });
 document.body.append(samplePreview);
@@ -968,6 +972,7 @@ function applyCanvasLayout(): void {
   canvasStack.style.height = `${displayedHeight}px`;
   canvasStack.style.transform = `translate(${offsetX}px, ${offsetY}px)`;
   zoomLabel.textContent = `${Math.round(scale * 100)}%`;
+  renderMinimap();
 }
 
 function fitToView(): void {
@@ -1018,6 +1023,131 @@ function toImagePoint(clientX: number, clientY: number): { x: number; y: number 
     x: ((clientX - rect.left) / rect.width) * store.width,
     y: ((clientY - rect.top) / rect.height) * store.height,
   };
+}
+
+// --- Minimap (optional overview in the bottom-right corner) ---
+
+const MINIMAP_MAX_WIDTH = 160;
+const MINIMAP_MAX_HEIGHT = 120;
+
+let minimapDragging = false;
+
+// Centers the view on a document point; used when clicking or dragging on the
+// minimap.
+function panToImagePoint(docX: number, docY: number): void {
+  const img = store.current;
+  if (!img) {
+    return;
+  }
+  const scale = currentScale(img);
+  offsetX = (img.width / 2 - docX) * scale;
+  offsetY = (img.height / 2 - docY) * scale;
+  applyCanvasLayout();
+}
+
+function panFromMinimap(event: PointerEvent): void {
+  const img = store.current;
+  if (!img) {
+    return;
+  }
+  const rect = minimapCanvas.getBoundingClientRect();
+  if (rect.width === 0 || rect.height === 0) {
+    return;
+  }
+  const relX = clamp((event.clientX - rect.left) / rect.width, 0, 1);
+  const relY = clamp((event.clientY - rect.top) / rect.height, 0, 1);
+  panToImagePoint(relX * img.width, relY * img.height);
+}
+
+minimapCanvas.addEventListener('pointerdown', (event) => {
+  if (!store.current) {
+    return;
+  }
+  minimapDragging = true;
+  minimapCanvas.setPointerCapture(event.pointerId);
+  panFromMinimap(event);
+  event.preventDefault();
+});
+
+minimapCanvas.addEventListener('pointermove', (event) => {
+  if (minimapDragging) {
+    panFromMinimap(event);
+  }
+});
+
+function endMinimapDrag(event: PointerEvent): void {
+  minimapDragging = false;
+  if (minimapCanvas.hasPointerCapture(event.pointerId)) {
+    minimapCanvas.releasePointerCapture(event.pointerId);
+  }
+}
+minimapCanvas.addEventListener('pointerup', endMinimapDrag);
+minimapCanvas.addEventListener('pointercancel', endMinimapDrag);
+
+// Draws the document preview and the current viewport rectangle. Called from
+// applyCanvasLayout (pan/zoom/resize) and render (content changes) so it always
+// reflects what is on screen.
+const minimapThumb = document.createElement('canvas');
+let minimapThumbRevision = -1;
+
+function renderMinimap(): void {
+  const img = store.current;
+  const enabled = store.settings.minimap && img !== null;
+  minimap.style.display = enabled ? 'block' : 'none';
+  if (!img || !enabled) {
+    return;
+  }
+  const mapScale = Math.min(MINIMAP_MAX_WIDTH / img.width, MINIMAP_MAX_HEIGHT / img.height, 1);
+  const mapWidth = Math.max(1, Math.round(img.width * mapScale));
+  const mapHeight = Math.max(1, Math.round(img.height * mapScale));
+  const dpr = window.devicePixelRatio || 1;
+  const canvasWidth = Math.round(mapWidth * dpr);
+  const canvasHeight = Math.round(mapHeight * dpr);
+  if (minimapCanvas.width !== canvasWidth || minimapCanvas.height !== canvasHeight) {
+    minimapCanvas.width = canvasWidth;
+    minimapCanvas.height = canvasHeight;
+  }
+  minimapCanvas.style.width = `${mapWidth}px`;
+  minimapCanvas.style.height = `${mapHeight}px`;
+  const context = minimapCanvas.getContext('2d');
+  if (!context) {
+    return;
+  }
+  // The downscaled document is cached and only refreshed when the content
+  // changes, so panning just blits the cached thumbnail and the viewport rect.
+  if (minimapThumbRevision !== store.revision || minimapThumb.width !== canvasWidth || minimapThumb.height !== canvasHeight) {
+    minimapThumbRevision = store.revision;
+    minimapThumb.width = canvasWidth;
+    minimapThumb.height = canvasHeight;
+    const thumbContext = minimapThumb.getContext('2d');
+    if (thumbContext) {
+      thumbContext.setTransform(dpr, 0, 0, dpr, 0, 0);
+      thumbContext.imageSmoothingEnabled = true;
+      thumbContext.drawImage(canvas, 0, 0, mapWidth, mapHeight);
+    }
+  }
+  context.setTransform(dpr, 0, 0, dpr, 0, 0);
+  context.clearRect(0, 0, mapWidth, mapHeight);
+  context.drawImage(minimapThumb, 0, 0, mapWidth, mapHeight);
+
+  // Viewport rectangle: the visible document region mapped into minimap space.
+  const area = canvasArea.getBoundingClientRect();
+  const scale = currentScale(img);
+  const left = area.width / 2 - (img.width * scale) / 2 + offsetX;
+  const top = area.height / 2 - (img.height * scale) / 2 + offsetY;
+  const x0 = clamp(-left / scale, 0, img.width);
+  const y0 = clamp(-top / scale, 0, img.height);
+  const x1 = clamp((area.width - left) / scale, 0, img.width);
+  const y1 = clamp((area.height - top) / scale, 0, img.height);
+  const rectX = (x0 / img.width) * mapWidth;
+  const rectY = (y0 / img.height) * mapHeight;
+  const rectW = Math.max(2, ((x1 - x0) / img.width) * mapWidth);
+  const rectH = Math.max(2, ((y1 - y0) / img.height) * mapHeight);
+  context.fillStyle = 'rgba(255, 255, 255, 0.18)';
+  context.fillRect(rectX, rectY, rectW, rectH);
+  context.strokeStyle = '#ffffff';
+  context.lineWidth = 1;
+  context.strokeRect(rectX + 0.5, rectY + 0.5, Math.max(1, rectW - 1), Math.max(1, rectH - 1));
 }
 
 function pointerPressure(event: PointerEvent): number {
@@ -2429,6 +2559,9 @@ function render(): void {
   syncPanelButtons();
   miniLayers?.sync();
   timeline?.sync();
+  // Also runs when there is no image (applyCanvasLayout returns early then),
+  // so the minimap hides itself correctly.
+  renderMinimap();
 }
 
 function prepareFrameChange(): void {
