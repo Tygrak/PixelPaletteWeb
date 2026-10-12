@@ -13,7 +13,8 @@ export function getActiveColorPicker(): ((color: RGB) => void) | null {
 
 export function selectColorDialog(initial?: RGB): Promise<RGB> {
   return new Promise<RGB>((resolve) => {
-    let current: RGB = initial ? { ...initial } : { r: 0, g: 0, b: 0 };
+    const original: RGB = initial ? { ...initial } : { r: 0, g: 0, b: 0 };
+    let current: RGB = { ...original };
     let colorChanged = false;
 
     const rInput = numeric(0, { min: 0, max: 255 });
@@ -112,6 +113,10 @@ export function selectColorDialog(initial?: RGB): Promise<RGB> {
         if (activePicker === pick) {
           activePicker = null;
         }
+        // Dismissed (Escape or ✕): keep the original color. When Ok closed the
+        // dialog, its own click listener runs right after this callback and
+        // resolves first, so the queued resolve here is ignored.
+        queueMicrotask(() => resolve({ ...original }));
       },
       false,
     );

@@ -2,7 +2,14 @@ import { brushById } from './brushLibrary';
 import { Brush, DEFAULT_BRUSH_ID } from './brushes';
 import { rgb, RGB } from './color';
 import { cloneImage, createEmptyImage, fillImage, placeImageCentered, resizeCanvasImage, resizeImage } from './image';
-import { compositeLayers, copyLayer, createLayer, duplicateLayer as duplicateLayerData, Layer } from './layers';
+import {
+  compositeLayers,
+  compositeRegion,
+  copyLayer,
+  createLayer,
+  duplicateLayer as duplicateLayerData,
+  Layer,
+} from './layers';
 import { Selection } from './selection';
 import { loadSettings, saveSettings, Settings } from './settings';
 import { ToolId } from './tools';
@@ -74,6 +81,10 @@ export class Store {
   status = '';
   revision = 0;
 
+  // When the last change was local (paint strokes), the document-space
+  // rectangle it touched; null means the whole canvas needs repainting.
+  lastDamage: { x: number; y: number; width: number; height: number } | null = null;
+
   private compositeCache: ImageData | null = null;
   private listeners: Listener[] = [];
 
@@ -112,11 +123,41 @@ export class Store {
 
   private invalidate(): void {
     this.compositeCache = null;
+    // Any full invalidation also invalidates the pending damage rectangle, so
+    // a stale rectangle can never cause a partial repaint of new content.
+    this.lastDamage = null;
   }
 
   // Marks the document as changed (image content / layers).
   notify(): void {
     this.invalidate();
+    this.lastDamage = null;
+    this.revision++;
+    this.frames[this.currentFrame].contentRevision++;
+    this.emit();
+  }
+
+  // Fast path for local edits (brush strokes): only the given document-space
+  // rectangle changed, so the cached composite is patched in place and the
+  // renderer can update just that part of the canvas.
+  notifyArea(x: number, y: number, width: number, height: number): void {
+    if (this.layers.length === 0 || this.width === 0 || this.height === 0) {
+      return;
+    }
+    const x0 = Math.max(0, Math.floor(x));
+    const y0 = Math.max(0, Math.floor(y));
+    const x1 = Math.min(this.width, Math.ceil(x + width));
+    const y1 = Math.min(this.height, Math.ceil(y + height));
+    if (x1 <= x0 || y1 <= y0) {
+      return;
+    }
+    if (this.compositeCache !== null) {
+      compositeRegion(this.compositeCache, this.layers, x0, y0, x1 - x0, y1 - y0);
+      this.lastDamage = { x: x0, y: y0, width: x1 - x0, height: y1 - y0 };
+    } else {
+      // No cached composite yet; the next render rebuilds it in full.
+      this.lastDamage = null;
+    }
     this.revision++;
     this.frames[this.currentFrame].contentRevision++;
     this.emit();

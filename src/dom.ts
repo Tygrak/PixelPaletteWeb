@@ -127,15 +127,32 @@ export function createDialog(
       return;
     }
     closed = true;
+    window.removeEventListener('keydown', onKeyDown, true);
     overlay.remove();
     onClose?.();
   }
+  // Escape dismisses the top-most dialog, exactly like pressing its
+  // Cancel/close button. Intercepted in the capture phase so the app's own
+  // Escape shortcuts do not also fire.
+  function onKeyDown(event: KeyboardEvent): void {
+    if (event.key !== 'Escape') {
+      return;
+    }
+    const overlays = document.querySelectorAll('.overlay');
+    if (overlays.length === 0 || overlays[overlays.length - 1] !== overlay) {
+      return;
+    }
+    event.preventDefault();
+    event.stopPropagation();
+    close();
+  }
+  window.addEventListener('keydown', onKeyDown, true);
   document.body.append(overlay);
   return { overlay, body, status, actions, primary, close };
 }
 
 // Shows a modal confirmation prompt and resolves true when the confirm button
-// is pressed, false when dismissed (Cancel, backdrop, or Escape).
+// is pressed, false when dismissed (Cancel or Escape).
 export function confirmDialog(title: string, message: string, confirmLabel = 'OK'): Promise<boolean> {
   return new Promise((resolve) => {
     let confirmed = false;
@@ -149,7 +166,8 @@ export function confirmDialog(title: string, message: string, confirmLabel = 'OK
       },
     });
     dialog.body.append(h('div', { class: 'dialog-hint', text: message }));
-    dialog.actions.append(confirmButton);
+    // Prepend so the confirm action sits left of Cancel.
+    dialog.actions.prepend(confirmButton);
     confirmButton.focus();
   });
 }

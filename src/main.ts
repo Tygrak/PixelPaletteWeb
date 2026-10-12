@@ -932,6 +932,9 @@ let offsetY = 0;
 let lastWidth = 0;
 let lastHeight = 0;
 let lastRevision = -1;
+// False whenever the main canvas was cleared (resized) or has no content, so
+// the renderer knows a partial (dirty rectangle) update is not enough.
+let canvasValid = false;
 
 function fitScale(img: ImageData): number {
   const area = canvasArea.getBoundingClientRect();
@@ -1089,14 +1092,24 @@ minimapCanvas.addEventListener('pointercancel', endMinimapDrag);
 // reflects what is on screen.
 const minimapThumb = document.createElement('canvas');
 let minimapThumbRevision = -1;
+// Signature of the drawn state, so the double call per render (layout +
+// render itself) does not redraw the same minimap twice.
+let minimapSignature = '';
 
 function renderMinimap(): void {
   const img = store.current;
   const enabled = store.settings.minimap && img !== null;
   minimap.style.display = enabled ? 'block' : 'none';
   if (!img || !enabled) {
+    minimapSignature = '';
     return;
   }
+  const area = canvasArea.getBoundingClientRect();
+  const signature = `${store.revision}|${zoom}|${offsetX}|${offsetY}|${area.width}|${area.height}`;
+  if (signature === minimapSignature) {
+    return;
+  }
+  minimapSignature = signature;
   const mapScale = Math.min(MINIMAP_MAX_WIDTH / img.width, MINIMAP_MAX_HEIGHT / img.height, 1);
   const mapWidth = Math.max(1, Math.round(img.width * mapScale));
   const mapHeight = Math.max(1, Math.round(img.height * mapScale));
@@ -1131,7 +1144,6 @@ function renderMinimap(): void {
   context.drawImage(minimapThumb, 0, 0, mapWidth, mapHeight);
 
   // Viewport rectangle: the visible document region mapped into minimap space.
-  const area = canvasArea.getBoundingClientRect();
   const scale = currentScale(img);
   const left = area.width / 2 - (img.width * scale) / 2 + offsetX;
   const top = area.height / 2 - (img.height * scale) / 2 + offsetY;
@@ -1765,7 +1777,12 @@ canvas.addEventListener('pointermove', (event) => {
 
   if (isBrushTool(store.activeTool)) {
     hoverPoint = { x: point.x, y: point.y };
-    redrawOverlay();
+    // During a stroke the overlay is refreshed once per animation frame by the
+    // paint update; redrawing it per pointer event would just do the same work
+    // many times per shown frame.
+    if (!strokeImage) {
+      redrawOverlay();
+    }
   }
 
   if (panning) {
@@ -1959,11 +1976,15 @@ function endPointer(event: PointerEvent): void {
     panning = false;
   }
   if (strokeImage) {
-    store.notify();
+    // Paint anything still pending, then just refresh the UI: the stroke's
+    // pixels were already rendered through the per-stroke damage updates, so
+    // there is no need to recomposite the whole document again.
+    flushPaintUpdate();
     strokeImage = null;
     strokeSource = null;
     strokeMask = null;
     strokeBase = null;
+    store.emit();
   }
   if (selecting) {
     if (selecting.type === 'marquee' && !selecting.moved) {
@@ -2025,6 +2046,38 @@ function forEachStamp(
   for (let i = 1; i <= steps; i++) {
     const t = i / steps;
     fn(fromX + (toX - fromX) * t, fromY + (toY - fromY) * t);
+  }
+}
+
+// Strokes mutate pixels immediately but render at most once per animation
+// frame: damage rectangles accumulate and flush together, so high-rate pointer
+// input never does more rendering work than the display can show.
+let paintDamage: { minX: number; minY: number; maxX: number; maxY: number } | null = null;
+let paintFrame = 0;
+
+function flushPaintUpdate(): void {
+  if (paintFrame !== 0) {
+    cancelAnimationFrame(paintFrame);
+    paintFrame = 0;
+  }
+  const damage = paintDamage;
+  paintDamage = null;
+  if (damage) {
+    store.notifyArea(damage.minX, damage.minY, damage.maxX - damage.minX, damage.maxY - damage.minY);
+  }
+}
+
+function schedulePaintUpdate(minX: number, minY: number, maxX: number, maxY: number): void {
+  if (paintDamage) {
+    paintDamage.minX = Math.min(paintDamage.minX, minX);
+    paintDamage.minY = Math.min(paintDamage.minY, minY);
+    paintDamage.maxX = Math.max(paintDamage.maxX, maxX);
+    paintDamage.maxY = Math.max(paintDamage.maxY, maxY);
+  } else {
+    paintDamage = { minX, minY, maxX, maxY };
+  }
+  if (paintFrame === 0) {
+    paintFrame = requestAnimationFrame(flushPaintUpdate);
   }
 }
 
@@ -2135,7 +2188,15 @@ function paintStrokeSegment(
     }
   }
   strokeDistance += segmentLength;
-  store.notify();
+  // Only the segment's bounding box (expanded by the brush reach) changed, so
+  // hand the renderer that damage rectangle instead of a full-document update.
+  const reach = radius + 1 + (brush.edgeTexture > 0 ? radius * 0.4 : 0);
+  schedulePaintUpdate(
+    Math.min(fromX, toX) - reach,
+    Math.min(fromY, toY) - reach,
+    Math.max(fromX, toX) + reach,
+    Math.max(fromY, toY) + reach,
+  );
 }
 
 // --- Clipboard paste (as a new layer) ---
@@ -2449,10 +2510,22 @@ function render(): void {
       canvas.height = img.height;
       overlayCanvas.width = img.width;
       overlayCanvas.height = img.height;
+      canvasValid = false;
     }
     if (store.revision !== lastRevision) {
       lastRevision = store.revision;
-      canvas.getContext('2d')!.putImageData(img, 0, 0);
+      const context = canvas.getContext('2d');
+      const damage = store.lastDamage;
+      if (context) {
+        // Local edits (strokes) only repaint their dirty rectangle; anything
+        // else (or a canvas that was just cleared) needs the full image.
+        if (damage && canvasValid) {
+          context.putImageData(img, 0, 0, damage.x, damage.y, damage.width, damage.height);
+        } else {
+          context.putImageData(img, 0, 0);
+          canvasValid = true;
+        }
+      }
     }
     if (img.width !== lastWidth || img.height !== lastHeight) {
       lastWidth = img.width;
@@ -2468,6 +2541,7 @@ function render(): void {
     imageSizeText.textContent = '';
     canvasStack.classList.remove('visible');
     canvasPlaceholder.classList.remove('hidden');
+    canvasValid = false;
   }
 
   const backdrop = store.settings.canvasBackdrop;

@@ -99,3 +99,74 @@ export function compositeLayers(layers: Layer[], width: number, height: number):
   }
   return out;
 }
+
+// Recomputes just a document-space rectangle of an existing composite (built
+// from the same layers). Painting mutates one layer in place, so only the small
+// area a stroke touched needs re-blending instead of the whole document. The
+// math mirrors compositeLayers exactly (including its per-layer rounding) so
+// patched regions are pixel-identical to a full rebuild.
+export function compositeRegion(
+  out: ImageData,
+  layers: Layer[],
+  rectX: number,
+  rectY: number,
+  rectWidth: number,
+  rectHeight: number,
+): void {
+  const visible = layers.filter((layer) => layer.visible && layer.opacity > 0);
+  const x0 = Math.max(0, Math.floor(rectX));
+  const y0 = Math.max(0, Math.floor(rectY));
+  const x1 = Math.min(out.width, Math.ceil(rectX + rectWidth));
+  const y1 = Math.min(out.height, Math.ceil(rectY + rectHeight));
+  if (x1 <= x0 || y1 <= y0) {
+    return;
+  }
+  const outData = out.data;
+  if (visible.length === 0) {
+    for (let y = y0; y < y1; y++) {
+      outData.fill(0, (x0 + y * out.width) * 4, (x1 + y * out.width) * 4);
+    }
+    return;
+  }
+  // Single opaque layer: the composite cache IS that layer's image, so the
+  // region is already up to date.
+  const single = visible[0];
+  if (visible.length === 1 && single.offsetX === 0 && single.offsetY === 0 && single.opacity >= 1) {
+    return;
+  }
+  for (let y = y0; y < y1; y++) {
+    for (let x = x0; x < x1; x++) {
+      const destPos = (x + y * out.width) * 4;
+      let r = 0;
+      let g = 0;
+      let b = 0;
+      let a = 0;
+      for (const layer of visible) {
+        const layerX = x - layer.offsetX;
+        const layerY = y - layer.offsetY;
+        if (layerX < 0 || layerX >= layer.image.width || layerY < 0 || layerY >= layer.image.height) {
+          continue;
+        }
+        const src = layer.image.data;
+        const sourcePos = (layerX + layerY * layer.image.width) * 4;
+        const sourceAlpha = (src[sourcePos + 3] / 255) * layer.opacity;
+        if (sourceAlpha <= 0) {
+          continue;
+        }
+        const destAlpha = a / 255;
+        const outAlpha = sourceAlpha + destAlpha * (1 - sourceAlpha);
+        if (outAlpha <= 0) {
+          continue;
+        }
+        r = Math.round((src[sourcePos] * sourceAlpha + r * destAlpha * (1 - sourceAlpha)) / outAlpha);
+        g = Math.round((src[sourcePos + 1] * sourceAlpha + g * destAlpha * (1 - sourceAlpha)) / outAlpha);
+        b = Math.round((src[sourcePos + 2] * sourceAlpha + b * destAlpha * (1 - sourceAlpha)) / outAlpha);
+        a = Math.round(outAlpha * 255);
+      }
+      outData[destPos] = r;
+      outData[destPos + 1] = g;
+      outData[destPos + 2] = b;
+      outData[destPos + 3] = a;
+    }
+  }
+}
