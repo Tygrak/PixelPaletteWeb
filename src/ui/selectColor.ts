@@ -4,8 +4,8 @@ import { createDialog, h, num, numeric, row } from '../dom';
 const HEX_PATTERN = /^#?[0-9a-fA-F]{6}$/;
 
 // Quick picker canvas sizes (content pixels; the CSS adds the border).
-const PICKER_WIDTH = 150;
-const PICKER_HEIGHT = 130;
+const PICKER_WIDTH = 140;
+const PICKER_HEIGHT = 120;
 const HUE_WIDTH = 20;
 
 // The color picker is a non-modal floating panel. While it is open, the main
@@ -23,12 +23,12 @@ export function selectColorDialog(initial?: RGB, onChange?: (color: RGB) => void
     let colorChanged = false;
     let confirmed = false;
 
-    const rInput = numeric(0, { min: 0, max: 255 });
-    const gInput = numeric(0, { min: 0, max: 255 });
-    const bInput = numeric(0, { min: 0, max: 255 });
-    const hInput = numeric(0, { min: 0, max: 360 });
-    const sInput = numeric(0, { min: 0, max: 1, step: 0.01 });
-    const lInput = numeric(0, { min: 0, max: 1, step: 0.01 });
+    const rInput = numeric(0, { min: 0, max: 255, width: 66 });
+    const gInput = numeric(0, { min: 0, max: 255, width: 66 });
+    const bInput = numeric(0, { min: 0, max: 255, width: 66 });
+    const hInput = numeric(0, { min: 0, max: 360, width: 66 });
+    const sInput = numeric(0, { min: 0, max: 1, step: 0.01, width: 74 });
+    const lInput = numeric(0, { min: 0, max: 1, step: 0.01, width: 74 });
     rInput.title = 'Red channel, from 0 to 255.';
     gInput.title = 'Green channel, from 0 to 255.';
     bInput.title = 'Blue channel, from 0 to 255.';
@@ -38,6 +38,7 @@ export function selectColorDialog(initial?: RGB, onChange?: (color: RGB) => void
     const hexInput = document.createElement('input');
     hexInput.type = 'text';
     hexInput.value = '#000000';
+    hexInput.style.width = '120px';
     hexInput.title = 'Hexadecimal color code, for example #ff8800.';
     const preview = document.createElement('div');
     preview.className = 'color-preview';
@@ -55,6 +56,8 @@ export function selectColorDialog(initial?: RGB, onChange?: (color: RGB) => void
     pickerHue.height = PICKER_HEIGHT;
     pickerHue.title = 'Click or drag to choose the hue.';
     const quickPicker = h('div', { class: 'quick-picker' }, [pickerSquare, pickerHue]);
+    const pickerRow = row('', quickPicker, preview);
+    pickerRow.classList.add('picker-row');
     // The picker keeps its own hue so dragging through fully desaturated or
     // black/white colors does not reset the square to another hue.
     let hue = colorToHsl(original).h;
@@ -280,7 +283,7 @@ export function selectColorDialog(initial?: RGB, onChange?: (color: RGB) => void
 
     const dialog = createDialog(
       'Select Color',
-      420,
+      380,
       'Ok',
       () => {
         if (activePicker === pick) {
@@ -312,8 +315,8 @@ export function selectColorDialog(initial?: RGB, onChange?: (color: RGB) => void
       row('Color as RGB (0-255):', rInput, gInput, bInput),
       row('Color as HSL:', hInput, sInput, lInput),
       row('Hex code:', hexInput),
-      row('', quickPicker, preview),
-      h('div', { class: 'dialog-hint', text: 'Tip: click the image to pick its color.' }),
+      pickerRow,
+      h('div', { class: 'dialog-hint', text: 'Click inside the image to pick a color from it.' }),
     );
 
     rInput.value = String(current.r);

@@ -3,7 +3,7 @@ import { allBrushes, onBrushesChanged } from './brushLibrary';
 import { brushFootprint, DEFAULT_BRUSH_ID, pressureFactor, textureModulates } from './brushes';
 import { clamp, colorToHex, hexToColor, rgb, RGB } from './color';
 import { AppContext } from './context';
-import { confirmDialog, DockPanel, h } from './dom';
+import { DockPanel, h } from './dom';
 import { imageDataFromBlob, loadImageFile, saveImageFile } from './files';
 import {
   bakeFloating,
@@ -42,6 +42,7 @@ import { openDitherPanel } from './ui/ditherPanel';
 import { openEffectsPanel } from './ui/effectsPanel';
 import { openLayersPanel } from './ui/layersPanel';
 import { createMiniLayers, MiniLayers } from './ui/miniLayers';
+import { openNewFileDialog } from './ui/newFileDialog';
 import { openPalettePanel } from './ui/palettePanel';
 import { openSaveDialog } from './ui/saveDialog';
 import { getActiveColorPicker, selectColorDialog } from './ui/selectColor';
@@ -451,11 +452,11 @@ function generateAutoPalette(image: ImageData): void {
   }
 }
 
-function openDocument(image: ImageData): void {
+function openDocument(image: ImageData, refreshPalette = false): void {
   commitFloating();
   const hadDocument = store.current !== null;
   store.openImage(image);
-  if (!hadDocument) {
+  if (!hadDocument || refreshPalette) {
     generateAutoPalette(image);
   }
 }
@@ -471,15 +472,15 @@ const BASE_COLORS: RGB[] = [
   rgb(255, 0, 255),
 ];
 
-function newDocument(): void {
+function newDocument(width?: number, height?: number): void {
   if (store.working) {
     return;
   }
   commitFloating();
-  const width = Math.max(1, store.settings.canvasWidth);
-  const height = Math.max(1, store.settings.canvasHeight);
+  const w = Math.max(1, width ?? store.settings.canvasWidth);
+  const h = Math.max(1, height ?? store.settings.canvasHeight);
   const background = store.settings.blankNewImage ? null : hexToColor(store.settings.backgroundColor);
-  store.newDocument(width, height, background);
+  store.newDocument(w, h, background);
   store.palette = BASE_COLORS.map((color) => ({ ...color }));
   store.emit();
 }
@@ -491,10 +492,18 @@ const newButton = h('button', {
     if (store.working) {
       return;
     }
-    if (store.current && !(await confirmDialog('New File', 'This will discard the current image. Continue?', 'New File'))) {
+    const choice = await openNewFileDialog(store);
+    if (!choice) {
       return;
     }
-    newDocument();
+    if ('image' in choice) {
+      // A new file always resets the palette; when it comes from an image,
+      // derive it from that image like a first paste does.
+      openDocument(choice.image, true);
+      return;
+    }
+    store.updateSettings({ canvasWidth: choice.width, canvasHeight: choice.height });
+    newDocument(choice.width, choice.height);
   },
 });
 const openButton = h('button', {

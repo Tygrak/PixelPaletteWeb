@@ -41,6 +41,7 @@ src/
     effectsPanel.ts  Edge detection
     layersPanel.ts   Full Layers panel
     miniLayers.ts    Compact sidebar layers list
+    newFileDialog.ts New file dialog (size / clipboard image)
     timeline.ts      Animation timeline (frames, playback, onion skin)
     saveDialog.ts    Save/export dialog (current / grid / separate)
     settingsPanel.ts Settings
