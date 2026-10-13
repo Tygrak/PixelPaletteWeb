@@ -79,6 +79,14 @@ export function compositeLayers(layers: Layer[], width: number, height: number):
           continue;
         }
         const destPos = (destX + destY * width) * 4;
+        if (sourceAlpha >= 1) {
+          // Fully opaque source: it simply replaces whatever was below.
+          outData[destPos] = src[sourcePos];
+          outData[destPos + 1] = src[sourcePos + 1];
+          outData[destPos + 2] = src[sourcePos + 2];
+          outData[destPos + 3] = 255;
+          continue;
+        }
         const destAlpha = outData[destPos + 3] / 255;
         const outAlpha = sourceAlpha + destAlpha * (1 - sourceAlpha);
         if (outAlpha <= 0) {
@@ -134,39 +142,54 @@ export function compositeRegion(
   if (visible.length === 1 && single.offsetX === 0 && single.offsetY === 0 && single.opacity >= 1) {
     return;
   }
+  // Clear the region, then blend each layer into it. Iterating layer-outer
+  // keeps both reads and writes sequential (unlike a per-pixel layer loop),
+  // which matters when a large region is patched.
   for (let y = y0; y < y1; y++) {
-    for (let x = x0; x < x1; x++) {
-      const destPos = (x + y * out.width) * 4;
-      let r = 0;
-      let g = 0;
-      let b = 0;
-      let a = 0;
-      for (const layer of visible) {
-        const layerX = x - layer.offsetX;
-        const layerY = y - layer.offsetY;
-        if (layerX < 0 || layerX >= layer.image.width || layerY < 0 || layerY >= layer.image.height) {
-          continue;
-        }
-        const src = layer.image.data;
-        const sourcePos = (layerX + layerY * layer.image.width) * 4;
-        const sourceAlpha = (src[sourcePos + 3] / 255) * layer.opacity;
+    outData.fill(0, (x0 + y * out.width) * 4, (x1 + y * out.width) * 4);
+  }
+  for (const layer of visible) {
+    const src = layer.image.data;
+    const layerWidth = layer.image.width;
+    const layerHeight = layer.image.height;
+    const { offsetX, offsetY, opacity } = layer;
+    const layerX0 = Math.max(0, x0 - offsetX);
+    const layerX1 = Math.min(layerWidth, x1 - offsetX);
+    const layerY0 = Math.max(0, y0 - offsetY);
+    const layerY1 = Math.min(layerHeight, y1 - offsetY);
+    for (let layerY = layerY0; layerY < layerY1; layerY++) {
+      const destY = layerY + offsetY;
+      for (let layerX = layerX0; layerX < layerX1; layerX++) {
+        const sourcePos = (layerX + layerY * layerWidth) * 4;
+        const sourceAlpha = (src[sourcePos + 3] / 255) * opacity;
         if (sourceAlpha <= 0) {
           continue;
         }
-        const destAlpha = a / 255;
+        const destPos = (layerX + offsetX + destY * out.width) * 4;
+        if (sourceAlpha >= 1) {
+          // Fully opaque source: it simply replaces whatever was below.
+          outData[destPos] = src[sourcePos];
+          outData[destPos + 1] = src[sourcePos + 1];
+          outData[destPos + 2] = src[sourcePos + 2];
+          outData[destPos + 3] = 255;
+          continue;
+        }
+        const destAlpha = outData[destPos + 3] / 255;
         const outAlpha = sourceAlpha + destAlpha * (1 - sourceAlpha);
         if (outAlpha <= 0) {
           continue;
         }
-        r = Math.round((src[sourcePos] * sourceAlpha + r * destAlpha * (1 - sourceAlpha)) / outAlpha);
-        g = Math.round((src[sourcePos + 1] * sourceAlpha + g * destAlpha * (1 - sourceAlpha)) / outAlpha);
-        b = Math.round((src[sourcePos + 2] * sourceAlpha + b * destAlpha * (1 - sourceAlpha)) / outAlpha);
-        a = Math.round(outAlpha * 255);
+        outData[destPos] = Math.round(
+          (src[sourcePos] * sourceAlpha + outData[destPos] * destAlpha * (1 - sourceAlpha)) / outAlpha,
+        );
+        outData[destPos + 1] = Math.round(
+          (src[sourcePos + 1] * sourceAlpha + outData[destPos + 1] * destAlpha * (1 - sourceAlpha)) / outAlpha,
+        );
+        outData[destPos + 2] = Math.round(
+          (src[sourcePos + 2] * sourceAlpha + outData[destPos + 2] * destAlpha * (1 - sourceAlpha)) / outAlpha,
+        );
+        outData[destPos + 3] = Math.round(outAlpha * 255);
       }
-      outData[destPos] = r;
-      outData[destPos + 1] = g;
-      outData[destPos + 2] = b;
-      outData[destPos + 3] = a;
     }
   }
 }

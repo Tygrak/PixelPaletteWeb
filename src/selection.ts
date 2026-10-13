@@ -8,23 +8,26 @@ export type Selection = Uint8Array;
 export type SelectionMode = 'replace' | 'add' | 'subtract';
 
 // Combines a new selection region with the existing one. Returns null when the
-// result selects nothing.
+// result selects nothing. In 'replace' mode the addition is returned directly
+// (the caller passes a freshly built mask), avoiding a full-size copy.
 export function combineSelection(
   base: Selection | null,
   addition: Selection,
   mode: SelectionMode,
 ): Selection | null {
   const length = addition.length;
-  const result = new Uint8Array(length);
-  let count = 0;
   if (mode === 'replace') {
+    let count = 0;
     for (let i = 0; i < length; i++) {
       if (addition[i]) {
-        result[i] = 1;
         count++;
       }
     }
-  } else if (mode === 'add') {
+    return count > 0 ? addition : null;
+  }
+  const result = new Uint8Array(length);
+  let count = 0;
+  if (mode === 'add') {
     for (let i = 0; i < length; i++) {
       if ((base && base[i]) || addition[i]) {
         result[i] = 1;
@@ -153,17 +156,36 @@ export function wandSelection(
   return mask;
 }
 
-// Builds a transparent overlay image with a black/white checkerboard border
-// around the selection (marching-ants style, visible on any background).
-export function selectionOverlay(mask: Selection, width: number, height: number): ImageData {
-  const overlay = createEmptyImage(width, height);
-  for (let y = 0; y < height; y++) {
-    for (let x = 0; x < width; x++) {
+// Builds a transparent image with a black/white checkerboard border around the
+// selection (marching-ants style, visible on any background). Only the area
+// around the selection's bounds is rasterized, so huge documents stay fast. The
+// border is `thickness` document pixels wide so it stays visible when the image
+// is displayed zoomed out (where a single pixel would disappear). Returns the
+// image plus the document-space position it belongs at.
+export function selectionOverlay(
+  mask: Selection,
+  width: number,
+  height: number,
+  thickness: number,
+  bounds: { x0: number; y0: number; x1: number; y1: number },
+): { image: ImageData; x: number; y: number } {
+  // The region is the selection's bounds padded by the border width, which is
+  // enough for the dilation below (radius = thickness - 1).
+  const x0 = Math.max(0, bounds.x0 - thickness);
+  const y0 = Math.max(0, bounds.y0 - thickness);
+  const x1 = Math.min(width, bounds.x1 + 1 + thickness);
+  const y1 = Math.min(height, bounds.y1 + 1 + thickness);
+  const regionW = Math.max(1, x1 - x0);
+  const regionH = Math.max(1, y1 - y0);
+
+  const boundary = new Uint8Array(regionW * regionH);
+  for (let y = y0; y < y1; y++) {
+    for (let x = x0; x < x1; x++) {
       const index = x + y * width;
       if (!mask[index]) {
         continue;
       }
-      const boundary =
+      if (
         x === 0 ||
         y === 0 ||
         x === width - 1 ||
@@ -171,17 +193,80 @@ export function selectionOverlay(mask: Selection, width: number, height: number)
         !mask[index - 1] ||
         !mask[index + 1] ||
         !mask[index - width] ||
-        !mask[index + width];
-      if (boundary) {
-        const pos = index * 4;
-        const dark = ((Math.floor(x / 3) + Math.floor(y / 3)) & 1) === 0;
-        const value = dark ? 0 : 255;
-        overlay.data[pos] = value;
-        overlay.data[pos + 1] = value;
-        overlay.data[pos + 2] = value;
-        overlay.data[pos + 3] = 255;
+        !mask[index + width]
+      ) {
+        boundary[x - x0 + (y - y0) * regionW] = 1;
       }
     }
   }
-  return overlay;
+  const shape = thickness > 1 ? dilateMask(boundary, regionW, regionH, thickness - 1) : boundary;
+  // Ant cells grow with the border so the pattern stays a few screen pixels
+  // wide at any zoom instead of averaging out into a thin grey line.
+  const cell = Math.max(3, thickness * 2);
+  const image = createEmptyImage(regionW, regionH);
+  for (let y = 0; y < regionH; y++) {
+    for (let x = 0; x < regionW; x++) {
+      if (!shape[x + y * regionW]) {
+        continue;
+      }
+      const pos = (x + y * regionW) * 4;
+      // Absolute coordinates keep the pattern aligned as the region changes.
+      const dark = ((Math.floor((x + x0) / cell) + Math.floor((y + y0) / cell)) & 1) === 0;
+      const value = dark ? 0 : 255;
+      image.data[pos] = value;
+      image.data[pos + 1] = value;
+      image.data[pos + 2] = value;
+      image.data[pos + 3] = 255;
+    }
+  }
+  return { image, x: x0, y: y0 };
+}
+
+// Grows a mask by `radius` pixels with a square kernel, using two separable
+// sliding-window passes (O(width * height) regardless of the radius).
+function dilateMask(mask: Uint8Array, width: number, height: number, radius: number): Uint8Array {
+  const horizontal = new Uint8Array(width * height);
+  for (let y = 0; y < height; y++) {
+    const row = y * width;
+    let count = 0;
+    const firstEnd = Math.min(width - 1, radius);
+    for (let x = 0; x <= firstEnd; x++) {
+      count += mask[row + x];
+    }
+    for (let x = 0; x < width; x++) {
+      if (count > 0) {
+        horizontal[row + x] = 1;
+      }
+      const add = x + radius + 1;
+      const remove = x - radius;
+      if (add < width) {
+        count += mask[row + add];
+      }
+      if (remove >= 0) {
+        count -= mask[row + remove];
+      }
+    }
+  }
+  const result = new Uint8Array(width * height);
+  for (let x = 0; x < width; x++) {
+    let count = 0;
+    const firstEnd = Math.min(height - 1, radius);
+    for (let y = 0; y <= firstEnd; y++) {
+      count += horizontal[y * width + x];
+    }
+    for (let y = 0; y < height; y++) {
+      if (count > 0) {
+        result[y * width + x] = 1;
+      }
+      const add = y + radius + 1;
+      const remove = y - radius;
+      if (add < height) {
+        count += horizontal[add * width + x];
+      }
+      if (remove >= 0) {
+        count -= horizontal[remove * width + x];
+      }
+    }
+  }
+  return result;
 }

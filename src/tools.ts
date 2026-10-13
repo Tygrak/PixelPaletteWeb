@@ -461,32 +461,40 @@ function clamp01(value: number): number {
 }
 
 // Scanline flood fill from a document-space seed position, constrained by the
-// selection and matching colors within the tolerance of the seed pixel.
-export function floodFill(image: ImageData, seedX: number, seedY: number, params: FillParams): void {
+// selection and matching colors within the tolerance of the seed pixel. Returns
+// the document-space bounds of the painted pixels (null when nothing matched).
+export function floodFill(
+  image: ImageData,
+  seedX: number,
+  seedY: number,
+  params: FillParams,
+): { x: number; y: number; width: number; height: number } | null {
   const { width, height, data } = image;
   const startX = Math.floor(seedX - params.offsetX);
   const startY = Math.floor(seedY - params.offsetY);
   if (startX < 0 || startX >= width || startY < 0 || startY >= height) {
-    return;
+    return null;
   }
   const seedPos = (startX + startY * width) * 4;
   const seedR = data[seedPos];
   const seedG = data[seedPos + 1];
   const seedB = data[seedPos + 2];
   const seedA = data[seedPos + 3];
-  const tolerance = params.tolerance;
-  const visited = new Uint8Array(width * height);
+  // Compared squared, so the per-pixel distance check avoids a square root.
+  const toleranceSquared = params.tolerance * params.tolerance;
+  // Per-pixel state: 0 unknown, 1 matches, 2 does not match, 3 painted. The
+  // distance test is the expensive part, so each pixel is tested only once.
+  const state = new Uint8Array(width * height);
   const { selection, offsetX, offsetY, color, alpha } = params;
 
-  const inSelection = (x: number, y: number): boolean => {
-    if (!selection) {
-      return true;
-    }
-    return selection[x + offsetX + (y + offsetY) * width] === 1;
-  };
   const matches = (x: number, y: number): boolean => {
     const index = x + y * width;
-    if (visited[index] || !inSelection(x, y)) {
+    const current = state[index];
+    if (current !== 0) {
+      return current === 1;
+    }
+    if (selection && selection[x + offsetX + (y + offsetY) * width] !== 1) {
+      state[index] = 2;
       return false;
     }
     const pos = index * 4;
@@ -496,11 +504,16 @@ export function floodFill(image: ImageData, seedX: number, seedY: number, params
     const da = data[pos + 3] - seedA;
     // Compare alpha too: transparent pixels share a zero RGB with black lines,
     // so RGB-only matching would leak through everything on transparent images.
-    return Math.sqrt(dr * dr + dg * dg + db * db + da * da) <= tolerance;
+    if (dr * dr + dg * dg + db * db + da * da <= toleranceSquared) {
+      state[index] = 1;
+      return true;
+    }
+    state[index] = 2;
+    return false;
   };
   const paint = (x: number, y: number): void => {
     const index = x + y * width;
-    visited[index] = 1;
+    state[index] = 3;
     const pos = index * 4;
     if (alpha >= 1) {
       data[pos] = color.r;
@@ -520,6 +533,10 @@ export function floodFill(image: ImageData, seedX: number, seedY: number, params
     data[pos + 3] = Math.round(outAlpha * 255);
   };
 
+  let minX = width;
+  let minY = height;
+  let maxX = -1;
+  let maxY = -1;
   const stack: number[] = [startX, startY];
   while (stack.length > 0) {
     const y = stack.pop()!;
@@ -552,5 +569,24 @@ export function floodFill(image: ImageData, seedX: number, seedY: number, params
       }
       cursor++;
     }
+    // Track the painted span's bounds (document space).
+    if (cursor > left) {
+      if (left < minX) {
+        minX = left;
+      }
+      if (cursor - 1 > maxX) {
+        maxX = cursor - 1;
+      }
+      if (y < minY) {
+        minY = y;
+      }
+      if (y > maxY) {
+        maxY = y;
+      }
+    }
   }
+  if (maxX < 0) {
+    return null;
+  }
+  return { x: minX + offsetX, y: minY + offsetY, width: maxX - minX + 1, height: maxY - minY + 1 };
 }

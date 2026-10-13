@@ -24,6 +24,7 @@ import {
 } from './floating';
 import { toolIcon } from './icons';
 import { createEmptyImage, getPixel, offsetImage, resizeImage } from './image';
+import { compositeLayers } from './layers';
 import { medianCut } from './palette';
 import {
   combineSelection,
@@ -974,6 +975,10 @@ let offsetY = 0;
 let lastWidth = 0;
 let lastHeight = 0;
 let lastRevision = -1;
+// Display scale the overlay canvas was last drawn at. Overlay elements such as
+// the selection border and the transform box are sized for the zoom level, so
+// they must be redrawn whenever this changes.
+let overlayScale = -1;
 // False whenever the main canvas was cleared (resized) or has no content, so
 // the renderer knows a partial (dirty rectangle) update is not enough.
 let canvasValid = false;
@@ -1018,6 +1023,11 @@ function applyCanvasLayout(): void {
   canvasStack.style.transform = `translate(${offsetX}px, ${offsetY}px)`;
   zoomLabel.textContent = `${Math.round(scale * 100)}%`;
   renderMinimap();
+  // The selection border and transform box are sized for the zoom level, so
+  // zooming in or out has to regenerate the overlay.
+  if (scale !== overlayScale) {
+    redrawOverlay();
+  }
 }
 
 function fitToView(): void {
@@ -1233,20 +1243,37 @@ function applySample(img: ImageData, x: number, y: number, clientX: number, clie
 // --- Selection overlay ---
 
 let cachedSelectionMask: Uint8Array | null = null;
-let cachedSelectionCanvas: HTMLCanvasElement | null = null;
+let cachedSelectionThickness = 1;
+let cachedSelectionCanvas: { canvas: HTMLCanvasElement; x: number; y: number } | null = null;
 
-function getSelectionCanvas(mask: Uint8Array): HTMLCanvasElement {
-  if (cachedSelectionMask === mask && cachedSelectionCanvas) {
+// Marching-ants border width in document pixels, chosen so the outline stays
+// roughly two screen pixels wide even when zoomed far out.
+function selectionThickness(): number {
+  const img = store.current;
+  const scale = img ? currentScale(img) : 1;
+  return Math.max(1, Math.ceil(1.5 / Math.max(scale, 0.02)));
+}
+
+// The selection border is only rasterized around the selection's bounds, so
+// this returns a small canvas plus the document-space position to draw it at.
+function getSelectionCanvas(mask: Uint8Array): { canvas: HTMLCanvasElement; x: number; y: number } | null {
+  const thickness = selectionThickness();
+  if (cachedSelectionMask === mask && cachedSelectionThickness === thickness && cachedSelectionCanvas) {
     return cachedSelectionCanvas;
   }
-  const overlay = selectionOverlay(mask, store.width, store.height);
-  const element = document.createElement('canvas');
-  element.width = store.width;
-  element.height = store.height;
-  element.getContext('2d')!.putImageData(overlay, 0, 0);
+  const bounds = selectionBoundsCached();
+  if (!bounds) {
+    return null;
+  }
+  const region = selectionOverlay(mask, store.width, store.height, thickness, bounds);
+  const canvas = document.createElement('canvas');
+  canvas.width = region.image.width;
+  canvas.height = region.image.height;
+  canvas.getContext('2d')!.putImageData(region.image, 0, 0);
   cachedSelectionMask = mask;
-  cachedSelectionCanvas = element;
-  return element;
+  cachedSelectionThickness = thickness;
+  cachedSelectionCanvas = { canvas, x: region.x, y: region.y };
+  return cachedSelectionCanvas;
 }
 
 // --- Onion skin (previous frame shown under the current one) ---
@@ -1345,11 +1372,47 @@ function cancelText(): void {
   redrawOverlay();
 }
 
+// Draws the in-progress marquee/lasso outline. The real mask is only built
+// when the drag ends, so dragging stays smooth even on large documents.
+function drawSelectionPreview(context: CanvasRenderingContext2D): void {
+  if (!selecting) {
+    return;
+  }
+  const lineWidth = Math.max(1, 1.5 / Math.max(displayScale(), 0.02));
+  context.save();
+  context.beginPath();
+  if (selecting.type === 'marquee') {
+    context.rect(
+      Math.min(selecting.startX, selecting.currentX),
+      Math.min(selecting.startY, selecting.currentY),
+      Math.abs(selecting.currentX - selecting.startX),
+      Math.abs(selecting.currentY - selecting.startY),
+    );
+  } else if (selecting.points.length > 0) {
+    context.moveTo(selecting.points[0].x, selecting.points[0].y);
+    for (let i = 1; i < selecting.points.length; i++) {
+      context.lineTo(selecting.points[i].x, selecting.points[i].y);
+    }
+    context.lineTo(selecting.currentX, selecting.currentY);
+  }
+  context.setLineDash([lineWidth * 4, lineWidth * 4]);
+  for (const [width, color] of [
+    [3, 'rgba(0, 0, 0, 0.75)'],
+    [1, 'rgba(255, 255, 255, 0.95)'],
+  ] as [number, string][]) {
+    context.lineWidth = width * lineWidth;
+    context.strokeStyle = color;
+    context.stroke();
+  }
+  context.restore();
+}
+
 function redrawOverlay(): void {
   const context = overlayCanvas.getContext('2d');
   if (!context) {
     return;
   }
+  overlayScale = displayScale();
   context.clearRect(0, 0, overlayCanvas.width, overlayCanvas.height);
   if (
     store.settings.onionSkin &&
@@ -1369,11 +1432,18 @@ function redrawOverlay(): void {
   if (floating) {
     drawFloatingToContext(context, floating);
   } else if (store.selection && store.width > 0) {
-    context.drawImage(getSelectionCanvas(store.selection), 0, 0);
+    const selection = getSelectionCanvas(store.selection);
+    if (selection) {
+      context.drawImage(selection.canvas, selection.x, selection.y);
+    }
+  }
+  if (selecting) {
+    drawSelectionPreview(context);
   }
   const box = store.activeTool === 'move' || store.activeTool === 'resize' ? currentBox() : null;
   if (box) {
-    drawBoxToContext(context, box, handleHalfSize());
+    // Thicken the box lines when zoomed out so they do not disappear.
+    drawBoxToContext(context, box, handleHalfSize(), Math.max(1, 1 / Math.max(displayScale(), 0.02)));
   }
   if (textEditing) {
     context.save();
@@ -1528,6 +1598,62 @@ function selectionModeFor(event: PointerEvent): SelectionMode {
 let moving: { startClientX: number; startClientY: number; offsetX: number; offsetY: number } | null = null;
 let sampling = false;
 
+// Pre-rendered canvases used to preview a plain layer move without
+// recompositing the whole document on every pointer event (which makes large
+// images choppy). The real composite is rebuilt once when the drag ends.
+let movePreview: {
+  below: HTMLCanvasElement | null;
+  above: HTMLCanvasElement | null;
+  layer: HTMLCanvasElement;
+} | null = null;
+
+function imageToCanvas(image: ImageData): HTMLCanvasElement {
+  const element = document.createElement('canvas');
+  element.width = image.width;
+  element.height = image.height;
+  element.getContext('2d')!.putImageData(image, 0, 0);
+  return element;
+}
+
+function layersToCanvas(layers: typeof store.layers): HTMLCanvasElement | null {
+  if (!layers.some((layer) => layer.visible && layer.opacity > 0)) {
+    return null;
+  }
+  return imageToCanvas(compositeLayers(layers, store.width, store.height));
+}
+
+function buildMovePreview(): void {
+  const layer = store.activeLayer;
+  if (!layer) {
+    movePreview = null;
+    return;
+  }
+  movePreview = {
+    below: layersToCanvas(store.layers.slice(0, store.activeIndex)),
+    above: layersToCanvas(store.layers.slice(store.activeIndex + 1)),
+    layer: imageToCanvas(layer.image),
+  };
+}
+
+function drawMovePreview(): void {
+  const layer = store.activeLayer;
+  const context = canvas.getContext('2d');
+  if (!movePreview || !layer || !context) {
+    return;
+  }
+  context.clearRect(0, 0, canvas.width, canvas.height);
+  if (movePreview.below) {
+    context.drawImage(movePreview.below, 0, 0);
+  }
+  context.globalAlpha = layer.opacity;
+  context.drawImage(movePreview.layer, layer.offsetX, layer.offsetY);
+  context.globalAlpha = 1;
+  if (movePreview.above) {
+    context.drawImage(movePreview.above, 0, 0);
+  }
+  canvasValid = true;
+}
+
 let resizeDrag: {
   handle: string;
   startWidth: number;
@@ -1568,6 +1694,7 @@ function beginMoveInteraction(event: PointerEvent, pointX: number, pointY: numbe
       return;
     }
     store.pushHistory();
+    buildMovePreview();
     moving = {
       startClientX: event.clientX,
       startClientY: event.clientY,
@@ -1733,7 +1860,7 @@ canvas.addEventListener('pointerdown', (event) => {
       if (!image || !layer) {
         break;
       }
-      floodFill(image, point.x, point.y, {
+      const bounds = floodFill(image, point.x, point.y, {
         color: store.foreground,
         alpha: store.brushOpacity,
         tolerance: store.fillTolerance,
@@ -1741,7 +1868,12 @@ canvas.addEventListener('pointerdown', (event) => {
         offsetX: layer.offsetX,
         offsetY: layer.offsetY,
       });
-      store.notify();
+      if (bounds) {
+        // Only the filled region is re-composited and repainted.
+        store.notifyArea(bounds.x, bounds.y, bounds.width, bounds.height);
+      } else {
+        store.emit();
+      }
       break;
     }
     case 'marquee':
@@ -1863,11 +1995,8 @@ canvas.addEventListener('pointermove', (event) => {
         selecting.points.push({ x: point.x, y: point.y });
       }
     }
-    const preview =
-      selecting.type === 'marquee'
-        ? rectSelection(store.width, store.height, selecting.startX, selecting.startY, point.x, point.y)
-        : polygonSelection(store.width, store.height, selecting.points);
-    store.setSelection(combineSelection(selectionBase, preview, selectionMode));
+    // Only the outline is drawn while dragging; the mask is built on release.
+    redrawOverlay();
     return;
   }
 
@@ -1916,12 +2045,13 @@ canvas.addEventListener('pointermove', (event) => {
       const scale = currentScale(img) || 1;
       const dx = (event.clientX - moving.startClientX) / scale;
       const dy = (event.clientY - moving.startClientY) / scale;
-      store.layers[store.activeIndex] = {
-        ...layer,
-        offsetX: Math.round(moving.offsetX + dx),
-        offsetY: Math.round(moving.offsetY + dy),
-      };
-      store.notify();
+      const offsetX = Math.round(moving.offsetX + dx);
+      const offsetY = Math.round(moving.offsetY + dy);
+      if (offsetX !== layer.offsetX || offsetY !== layer.offsetY) {
+        store.layers[store.activeIndex] = { ...layer, offsetX, offsetY };
+        drawMovePreview();
+        redrawOverlay();
+      }
     }
     return;
   }
@@ -2029,21 +2159,25 @@ function endPointer(event: PointerEvent): void {
     store.emit();
   }
   if (selecting) {
-    if (selecting.type === 'marquee' && !selecting.moved) {
+    const finished = selecting;
+    const base = selectionBase;
+    const mode = selectionMode;
+    selecting = null;
+    selectionBase = null;
+    if (finished.type === 'marquee' && !finished.moved) {
       // A plain click with the marquee clears the selection.
       store.clearSelection();
     } else {
       const mask =
-        selecting.type === 'marquee'
-          ? rectSelection(store.width, store.height, selecting.startX, selecting.startY, selecting.currentX, selecting.currentY)
-          : polygonSelection(store.width, store.height, selecting.points);
-      store.setSelection(combineSelection(selectionBase, mask, selectionMode));
+        finished.type === 'marquee'
+          ? rectSelection(store.width, store.height, finished.startX, finished.startY, finished.currentX, finished.currentY)
+          : polygonSelection(store.width, store.height, finished.points);
+      store.setSelection(combineSelection(base, mask, mode));
     }
-    selecting = null;
-    selectionBase = null;
   }
   if (moving) {
     moving = null;
+    movePreview = null;
     bakeActiveLayerOffset();
   }
   sampling = false;

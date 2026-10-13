@@ -321,7 +321,14 @@ export class Store {
     this.pushHistory();
     const painted = { ...layer, image: cloneImage(layer.image) };
     this.layers[this.activeIndex] = painted;
-    this.invalidate();
+    // The clone is pixel-identical to the old image, so the cached composite
+    // stays valid; paint updates patch the touched regions from the clone.
+    // When the cache is the layer's own image (single-layer fast path), point
+    // it at the clone so those patches land on the object that is displayed.
+    if (this.compositeCache === layer.image) {
+      this.compositeCache = painted.image;
+    }
+    this.lastDamage = null;
     return painted.image;
   }
 

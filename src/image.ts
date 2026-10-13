@@ -73,24 +73,23 @@ export function cloneImage(img: ImageData): ImageData {
 // Returns a copy of the image shifted by (offsetX, offsetY); pixels moved off
 // the canvas are dropped and vacated areas become transparent.
 export function offsetImage(source: ImageData, offsetX: number, offsetY: number): ImageData {
-  const out = createEmptyImage(source.width, source.height);
-  for (let y = 0; y < source.height; y++) {
-    const sourceY = y - offsetY;
-    if (sourceY < 0 || sourceY >= source.height) {
-      continue;
-    }
-    for (let x = 0; x < source.width; x++) {
-      const sourceX = x - offsetX;
-      if (sourceX < 0 || sourceX >= source.width) {
-        continue;
-      }
-      const sourcePos = (sourceX + sourceY * source.width) * 4;
-      const destPos = (x + y * source.width) * 4;
-      out.data[destPos] = source.data[sourcePos];
-      out.data[destPos + 1] = source.data[sourcePos + 1];
-      out.data[destPos + 2] = source.data[sourcePos + 2];
-      out.data[destPos + 3] = source.data[sourcePos + 3];
-    }
+  const width = source.width;
+  const height = source.height;
+  const out = createEmptyImage(width, height);
+  // Rows stay contiguous, so each visible row is moved with one bulk copy
+  // instead of a per-pixel loop.
+  const x0 = Math.max(0, offsetX);
+  const x1 = Math.min(width, width + offsetX);
+  if (x1 <= x0) {
+    return out;
+  }
+  const rowBytes = (x1 - x0) * 4;
+  const y0 = Math.max(0, offsetY);
+  const y1 = Math.min(height, height + offsetY);
+  for (let y = y0; y < y1; y++) {
+    const sourceStart = (x0 - offsetX + (y - offsetY) * width) * 4;
+    const destStart = (x0 + y * width) * 4;
+    out.data.set(source.data.subarray(sourceStart, sourceStart + rowBytes), destStart);
   }
   return out;
 }

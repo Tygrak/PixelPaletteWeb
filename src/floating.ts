@@ -313,7 +313,12 @@ export function drawFloatingToContext(context: CanvasRenderingContext2D, floatin
   context.restore();
 }
 
-export function drawBoxToContext(context: CanvasRenderingContext2D, box: Box, handleHalfSize: number): void {
+export function drawBoxToContext(
+  context: CanvasRenderingContext2D,
+  box: Box,
+  handleHalfSize: number,
+  lineScale = 1,
+): void {
   const corners = boxCorners(box);
   context.save();
   context.lineJoin = 'round';
@@ -327,7 +332,7 @@ export function drawBoxToContext(context: CanvasRenderingContext2D, box: Box, ha
       context.lineTo(corners[i].x, corners[i].y);
     }
     context.closePath();
-    context.lineWidth = width;
+    context.lineWidth = width * lineScale;
     context.strokeStyle = color;
     context.stroke();
   }
