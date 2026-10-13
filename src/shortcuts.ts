@@ -1,0 +1,211 @@
+import { store } from './appStore';
+import { cancelFloating, commitFloating, copySelectionToClipboard, isFloating } from './editor/floatingSelection';
+import { backspaceText, cancelText, commitText, isTextEditing, typeText } from './editor/textTool';
+import { ToolId, toolForShortcut } from './core/tools';
+import { Timeline } from './ui/timeline';
+
+// Global keyboard shortcuts. Actions that belong to the app wiring (saving,
+// tool selection, playback, space-pan state) are injected via hooks.
+
+export interface ShortcutHooks {
+    saveDocument(): void;
+    selectTool(tool: ToolId): void;
+    getTimeline(): Timeline | null;
+    clearSymmetryDrag(): void;
+    setSpaceHeld(held: boolean): void;
+}
+
+export function installShortcuts(hooks: ShortcutHooks): void {
+    window.addEventListener('keydown', (event) => {
+        const target = event.target as HTMLElement | null;
+        const typing =
+            target !== null && (target.tagName === 'INPUT' || target.tagName === 'TEXTAREA' || target.isContentEditable);
+        const ctrl = event.ctrlKey || event.metaKey;
+
+        // Ignore auto-repeat for Space so holding it toggles playback once instead of
+        // flickering on/off (but let it through when typing in a field).
+        if (event.repeat && event.key === ' ' && !typing) {
+            event.preventDefault();
+            return;
+        }
+
+        if (store.playing) {
+            // While the animation is playing, only playback controls are available.
+            if (event.key === ' ') {
+                event.preventDefault();
+                hooks.getTimeline()?.togglePlay();
+                return;
+            }
+            if (event.key === 'Escape') {
+                event.preventDefault();
+                hooks.getTimeline()?.stopPlayback();
+                return;
+            }
+            if (ctrl && event.key.toLowerCase() === 's') {
+                event.preventDefault();
+                hooks.saveDocument();
+                return;
+            }
+            return;
+        }
+
+        if (isTextEditing()) {
+            if (ctrl) {
+                if (event.key.toLowerCase() === 's') {
+                    event.preventDefault();
+                    hooks.saveDocument();
+                }
+                return;
+            }
+            if (event.key === 'Escape') {
+                event.preventDefault();
+                cancelText();
+                return;
+            }
+            if (event.key === 'Enter') {
+                event.preventDefault();
+                commitText();
+                return;
+            }
+            if (event.key === 'Backspace') {
+                event.preventDefault();
+                backspaceText();
+                return;
+            }
+            if (event.key.length === 1) {
+                event.preventDefault();
+                typeText(event.key);
+                return;
+            }
+            return;
+        }
+
+        if (ctrl && event.key.toLowerCase() === 's') {
+            // Match the toolbar Save button instead of the browser's "Save page".
+            event.preventDefault();
+            hooks.saveDocument();
+            return;
+        }
+        if (ctrl && event.key.toLowerCase() === 'z') {
+            if (typing) {
+                return;
+            }
+            event.preventDefault();
+            if (isFloating()) {
+                cancelFloating();
+            } else if (event.shiftKey) {
+                store.redo();
+            } else {
+                store.undo();
+            }
+            return;
+        }
+        if (ctrl && event.key.toLowerCase() === 'y') {
+            if (typing) {
+                return;
+            }
+            event.preventDefault();
+            if (!isFloating()) {
+                store.redo();
+            }
+            return;
+        }
+        if (ctrl && event.key.toLowerCase() === 'n') {
+            event.preventDefault();
+            commitFloating();
+            store.addLayer();
+            return;
+        }
+        if (ctrl && event.key.toLowerCase() === 'e') {
+            event.preventDefault();
+            commitFloating();
+            store.mergeLayers();
+            return;
+        }
+        if (ctrl && event.key.toLowerCase() === 'c') {
+            if (typing) {
+                return;
+            }
+            if (isFloating() || store.selection) {
+                event.preventDefault();
+                void copySelectionToClipboard();
+            }
+            return;
+        }
+        if (ctrl && event.key.toLowerCase() === 'd') {
+            if (typing) {
+                return;
+            }
+            event.preventDefault();
+            if (isFloating()) {
+                commitFloating();
+            }
+            store.duplicateLayer();
+            return;
+        }
+        if (typing || ctrl) {
+            return;
+        }
+        // Number keys pick palette colors: 1-9 select the first nine entries, 0 the tenth.
+        const paletteIndex = event.key >= '0' && event.key <= '9' ? (event.key === '0' ? 9 : Number(event.key) - 1) : -1;
+        if (paletteIndex >= 0 && paletteIndex < store.palette.length) {
+            event.preventDefault();
+            store.setForeground(store.palette[paletteIndex]);
+            return;
+        }
+        if (event.key === 'Delete' || event.key === 'Backspace') {
+            if (isFloating()) {
+                commitFloating();
+            }
+            if (store.selection) {
+                event.preventDefault();
+                store.deleteSelection();
+            }
+            return;
+        }
+        if (event.key === 'Escape') {
+            if (store.symmetry.transformMode) {
+                hooks.clearSymmetryDrag();
+            } else if (isFloating()) {
+                cancelFloating();
+            } else {
+                store.clearSelection();
+            }
+            return;
+        }
+        if (event.key === 'Enter') {
+            if (isFloating()) {
+                commitFloating();
+            }
+            return;
+        }
+        if (event.key === ' ') {
+            event.preventDefault();
+            if (store.settings.animationMode) {
+                hooks.getTimeline()?.togglePlay();
+            } else {
+                hooks.setSpaceHeld(true);
+            }
+            return;
+        }
+        if (event.key === '[') {
+            store.setBrushSize(Math.max(1, store.brushSize - 2));
+            return;
+        }
+        if (event.key === ']') {
+            store.setBrushSize(Math.min(500, store.brushSize + 2));
+            return;
+        }
+        const tool = toolForShortcut(event.key);
+        if (tool) {
+            event.preventDefault();
+            hooks.selectTool(tool);
+        }
+    });
+
+    window.addEventListener('keyup', (event) => {
+        if (event.key === ' ') {
+            hooks.setSpaceHeld(false);
+        }
+    });
+}
