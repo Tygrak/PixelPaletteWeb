@@ -25,6 +25,15 @@ import {
 import { toolIcon } from './icons';
 import { createEmptyImage, getPixel, offsetImage, resizeImage } from './image';
 import { compositeLayers } from './layers';
+import {
+  applySymmetrizedFill,
+  drawSymmetryToContext,
+  hitTestSymmetry,
+  SymmetryTransform,
+  symmetryTransforms,
+  transformAngle,
+  transformDirection,
+} from './modifiers';
 import { medianCut } from './palette';
 import {
   combineSelection,
@@ -43,6 +52,7 @@ import { openDitherPanel } from './ui/ditherPanel';
 import { openEffectsPanel } from './ui/effectsPanel';
 import { openLayersPanel } from './ui/layersPanel';
 import { createMiniLayers, MiniLayers } from './ui/miniLayers';
+import { openModifiersPanel } from './ui/modifiersPanel';
 import { openNewFileDialog } from './ui/newFileDialog';
 import { openPalettePanel } from './ui/palettePanel';
 import { openSaveDialog } from './ui/saveDialog';
@@ -81,6 +91,54 @@ let transformDrag: {
 
 let cachedBoundsMask: Selection | null = null;
 let cachedBounds: ReturnType<typeof selectionBounds> = null;
+
+// In-progress symmetry guide drag (Modifiers panel transform mode).
+let symmetryDrag: {
+  mode: 'move' | 'rotate';
+  startX: number;
+  startY: number;
+  startCx: number;
+  startCy: number;
+  startPointerAngle: number;
+  startLineAngle: number;
+} | null = null;
+
+function snapAngle(angle: number): number {
+  const step = Math.PI / 12;
+  return Math.round(angle / step) * step;
+}
+
+function beginSymmetryDrag(x: number, y: number): void {
+  const sym = store.symmetry;
+  const hit = hitTestSymmetry(sym, x, y, hitTolerance());
+  if (!hit) {
+    return;
+  }
+  symmetryDrag = {
+    mode: hit === 'move' ? 'move' : 'rotate',
+    startX: x,
+    startY: y,
+    startCx: sym.cx,
+    startCy: sym.cy,
+    startPointerAngle: Math.atan2(y - sym.cy, x - sym.cx),
+    startLineAngle: sym.angle,
+  };
+}
+
+function applySymmetryDrag(x: number, y: number, shiftKey: boolean): void {
+  if (!symmetryDrag) {
+    return;
+  }
+  const sym = store.symmetry;
+  if (symmetryDrag.mode === 'move') {
+    sym.cx = symmetryDrag.startCx + (x - symmetryDrag.startX);
+    sym.cy = symmetryDrag.startCy + (y - symmetryDrag.startY);
+    return;
+  }
+  const pointerAngle = Math.atan2(y - sym.cy, x - sym.cx);
+  const angle = symmetryDrag.startLineAngle + (pointerAngle - symmetryDrag.startPointerAngle);
+  sym.angle = shiftKey ? snapAngle(angle) : angle;
+}
 
 function selectionBoundsCached(): ReturnType<typeof selectionBounds> {
   if (cachedBoundsMask === store.selection) {
@@ -358,6 +416,7 @@ let adjustmentsPanel: DockPanel | null = null;
 let effectsPanel: DockPanel | null = null;
 let layersPanel: DockPanel | null = null;
 let settingsPanel: DockPanel | null = null;
+let modifiersPanel: DockPanel | null = null;
 
 // Refreshes a panel's toggle button and the layout after opening/closing.
 function panelChanged(): void {
@@ -407,6 +466,17 @@ const togglePanels: Record<string, () => void> = {
     }
     effectsPanel = openEffectsPanel(ctx, () => {
       effectsPanel = null;
+      panelChanged();
+    });
+    panelChanged();
+  },
+  modifiers: () => {
+    if (modifiersPanel) {
+      modifiersPanel.close();
+      return;
+    }
+    modifiersPanel = openModifiersPanel(ctx, () => {
+      modifiersPanel = null;
       panelChanged();
     });
     panelChanged();
@@ -593,6 +663,9 @@ function selectTool(tool: ToolId): void {
   if (floating && tool !== 'move') {
     commitFloating();
   }
+  if (store.symmetry.transformMode) {
+    store.setSymmetry({ transformMode: false });
+  }
   store.setActiveTool(tool);
 }
 
@@ -619,6 +692,11 @@ const adjustmentsButton = h('button', {
   onclick: () => togglePanels.adjustments(),
 });
 const effectsButton = h('button', { class: 'btn sidebar-btn', text: 'Effects', onclick: () => togglePanels.effects() });
+const modifiersButton = h('button', {
+  class: 'btn sidebar-btn',
+  text: 'Modifiers',
+  onclick: () => togglePanels.modifiers(),
+});
 const layersButton = h('button', { class: 'btn sidebar-btn', text: 'Layers', onclick: () => togglePanels.layers() });
 const settingsButton = h('button', {
   class: 'btn sidebar-btn',
@@ -632,6 +710,7 @@ function syncPanelButtons(): void {
   ditherButton.classList.toggle('active', ditherPanel !== null);
   adjustmentsButton.classList.toggle('active', adjustmentsPanel !== null);
   effectsButton.classList.toggle('active', effectsPanel !== null);
+  modifiersButton.classList.toggle('active', modifiersPanel !== null);
   layersButton.classList.toggle('active', layersPanel !== null);
   settingsButton.classList.toggle('active', settingsPanel !== null);
 }
@@ -643,6 +722,7 @@ const sidebar = h('div', { class: 'sidebar' }, [
   paletteButton,
   adjustmentsButton,
   effectsButton,
+  modifiersButton,
   layersButton,
   settingsButton,
   h('div', { class: 'sidebar-spacer' }),
@@ -1445,6 +1525,15 @@ function redrawOverlay(): void {
     // Thicken the box lines when zoomed out so they do not disappear.
     drawBoxToContext(context, box, handleHalfSize(), Math.max(1, 1 / Math.max(displayScale(), 0.02)));
   }
+  if (store.symmetry.enabled || store.symmetry.transformMode) {
+    drawSymmetryToContext(
+      context,
+      store.symmetry,
+      store.symmetry.transformMode,
+      handleHalfSize(),
+      Math.max(1, 1 / Math.max(displayScale(), 0.02)),
+    );
+  }
   if (textEditing) {
     context.save();
     context.font = textFontString();
@@ -1482,7 +1571,7 @@ function redrawOverlay(): void {
       context.stroke();
     }
   }
-  if (hoverPoint && store.current && isBrushTool(store.activeTool)) {
+  if (hoverPoint && store.current && isBrushTool(store.activeTool) && !store.symmetry.transformMode) {
     const brush = store.brush;
     if (!brush.antialias && store.activeTool !== 'knife') {
       // Show the exact pixels a hard (non-antialiased) tip will paint.
@@ -1531,6 +1620,8 @@ let strokeSource: ImageData | null = null;
 let strokeKind: 'brush' | 'eraser' | 'clone' | 'heal' | 'knife' = 'brush';
 let strokeLastX = 0;
 let strokeLastY = 0;
+// Symmetry copies for the current stroke (null when the modifier is off).
+let strokeTransforms: SymmetryTransform[] | null = null;
 // Texture is sampled in stroke space, so a stroke tracks its own arc length,
 // a random phase (to vary each stroke) and a per-stamp rotation jitter seed.
 let strokeDistance = 0;
@@ -1551,6 +1642,19 @@ function beginStrokeState(textured: boolean, image: ImageData): void {
   strokeStampIndex = 0;
   strokeMask = textured ? new Float32Array(image.width * image.height) : null;
   strokeBase = textured ? new Uint8ClampedArray(image.data) : null;
+  // The guide cannot move mid-stroke, so its transforms are captured once.
+  strokeTransforms = store.symmetry.enabled ? symmetryTransforms(store.symmetry) : null;
+}
+
+// Runs `fn` for the original stamp and for every symmetric copy.
+function forEachStrokeTransform(fn: (transform: SymmetryTransform | null) => void): void {
+  if (!strokeTransforms) {
+    fn(null);
+    return;
+  }
+  for (const transform of strokeTransforms) {
+    fn(transform);
+  }
 }
 
 // Deterministic 0..1 hash used to jitter each stamp's tip rotation.
@@ -1755,11 +1859,21 @@ canvas.addEventListener('pointerdown', (event) => {
     return;
   }
 
-  if (event.button === 1 || tool === 'hand' || spaceHeld) {
+  if (event.button === 1 || spaceHeld) {
     beginPan(event);
     return;
   }
   if (event.button !== 0) {
+    return;
+  }
+
+  // The Modifiers panel's transform mode turns canvas drags into guide edits.
+  if (store.symmetry.transformMode) {
+    beginSymmetryDrag(point.x, point.y);
+    return;
+  }
+  if (tool === 'hand') {
+    beginPan(event);
     return;
   }
 
@@ -1860,7 +1974,7 @@ canvas.addEventListener('pointerdown', (event) => {
       if (!image || !layer) {
         break;
       }
-      const bounds = floodFill(image, point.x, point.y, {
+      const fill = floodFill(image, point.x, point.y, {
         color: store.foreground,
         alpha: store.brushOpacity,
         tolerance: store.fillTolerance,
@@ -1868,9 +1982,29 @@ canvas.addEventListener('pointerdown', (event) => {
         offsetX: layer.offsetX,
         offsetY: layer.offsetY,
       });
-      if (bounds) {
-        // Only the filled region is re-composited and repainted.
-        store.notifyArea(bounds.x, bounds.y, bounds.width, bounds.height);
+      if (fill) {
+        let minX = fill.x;
+        let minY = fill.y;
+        let maxX = fill.x + fill.width;
+        let maxY = fill.y + fill.height;
+        if (store.symmetry.enabled) {
+          const mirrored = applySymmetrizedFill(
+            image,
+            fill.mask,
+            { x: fill.x - layer.offsetX, y: fill.y - layer.offsetY, width: fill.width, height: fill.height },
+            store.symmetry,
+            layer.offsetX,
+            layer.offsetY,
+          );
+          if (mirrored) {
+            minX = Math.min(minX, mirrored.x);
+            minY = Math.min(minY, mirrored.y);
+            maxX = Math.max(maxX, mirrored.x + mirrored.width);
+            maxY = Math.max(maxY, mirrored.y + mirrored.height);
+          }
+        }
+        // Only the filled (and mirrored) region is re-composited and repainted.
+        store.notifyArea(minX, minY, maxX - minX, maxY - minY);
       } else {
         store.emit();
       }
@@ -1948,6 +2082,13 @@ canvas.addEventListener('pointermove', (event) => {
     return;
   }
   const point = toImagePoint(event.clientX, event.clientY);
+
+  if (symmetryDrag) {
+    applySymmetryDrag(point.x, point.y, event.shiftKey);
+    canvas.style.cursor = 'grabbing';
+    redrawOverlay();
+    return;
+  }
 
   if (isBrushTool(store.activeTool)) {
     hoverPoint = { x: point.x, y: point.y };
@@ -2109,6 +2250,11 @@ function applyTransform(x: number, y: number, shiftKey: boolean): void {
 
 function updateHoverCursor(x: number, y: number): void {
   const tool = store.activeTool;
+  if (store.symmetry.transformMode) {
+    const hit = hitTestSymmetry(store.symmetry, x, y, hitTolerance());
+    canvas.style.cursor = hit === 'move' ? 'move' : hit ? 'grab' : '';
+    return;
+  }
   if (tool === 'text') {
     canvas.style.cursor = 'text';
     return;
@@ -2183,6 +2329,11 @@ function endPointer(event: PointerEvent): void {
   sampling = false;
   hideSamplePreview();
   transformDrag = null;
+  if (symmetryDrag) {
+    symmetryDrag = null;
+    // Sync the panel inputs after editing the guide directly on the image.
+    store.emit();
+  }
 
   if (resizeDrag) {
     const pending = resizePending;
@@ -2228,7 +2379,9 @@ function forEachStamp(
 // Strokes mutate pixels immediately but render at most once per animation
 // frame: damage rectangles accumulate and flush together, so high-rate pointer
 // input never does more rendering work than the display can show.
-let paintDamage: { minX: number; minY: number; maxX: number; maxY: number } | null = null;
+// Rectangles stay separate (only overlapping ones are merged), so symmetric
+// copies far apart do not inflate the repainted area.
+let paintDamage: { x0: number; y0: number; x1: number; y1: number }[] = [];
 let paintFrame = 0;
 
 function flushPaintUpdate(): void {
@@ -2237,21 +2390,37 @@ function flushPaintUpdate(): void {
     paintFrame = 0;
   }
   const damage = paintDamage;
-  paintDamage = null;
-  if (damage) {
-    store.notifyArea(damage.minX, damage.minY, damage.maxX - damage.minX, damage.maxY - damage.minY);
+  paintDamage = [];
+  if (damage.length > 0) {
+    store.notifyAreas(
+      damage.map((rect) => ({ x: rect.x0, y: rect.y0, width: rect.x1 - rect.x0, height: rect.y1 - rect.y0 })),
+    );
   }
 }
 
 function schedulePaintUpdate(minX: number, minY: number, maxX: number, maxY: number): void {
-  if (paintDamage) {
-    paintDamage.minX = Math.min(paintDamage.minX, minX);
-    paintDamage.minY = Math.min(paintDamage.minY, minY);
-    paintDamage.maxX = Math.max(paintDamage.maxX, maxX);
-    paintDamage.maxY = Math.max(paintDamage.maxY, maxY);
-  } else {
-    paintDamage = { minX, minY, maxX, maxY };
+  let rect = { x0: minX, y0: minY, x1: maxX, y1: maxY };
+  // Union with every overlapping rectangle, repeating until no more overlap
+  // (a union can grow into another rectangle).
+  let merged = true;
+  while (merged) {
+    merged = false;
+    for (let i = 0; i < paintDamage.length; i++) {
+      const other = paintDamage[i];
+      if (rect.x0 <= other.x1 && rect.x1 >= other.x0 && rect.y0 <= other.y1 && rect.y1 >= other.y0) {
+        rect = {
+          x0: Math.min(rect.x0, other.x0),
+          y0: Math.min(rect.y0, other.y0),
+          x1: Math.max(rect.x1, other.x1),
+          y1: Math.max(rect.y1, other.y1),
+        };
+        paintDamage.splice(i, 1);
+        merged = true;
+        break;
+      }
+    }
   }
+  paintDamage.push(rect);
   if (paintFrame === 0) {
     paintFrame = requestAnimationFrame(flushPaintUpdate);
   }
@@ -2290,48 +2459,77 @@ function paintStrokeSegment(
 
   if (strokeKind === 'clone' && strokeSource) {
     const frame = { dirX, dirY, distance: strokeDistance, seedX: strokeSeedX, seedY: strokeSeedY };
-    const params = {
-      radius,
-      alpha,
-      brush,
-      angle: brush.angle,
-      frame,
-      selection: store.selection,
-      layerOffsetX: offsetX,
-      layerOffsetY: offsetY,
-      cloneOffsetX: cloneOffset?.x ?? 0,
-      cloneOffsetY: cloneOffset?.y ?? 0,
-    };
-    forEachStamp(fromX, fromY, toX, toY, radius, (x, y) => cloneStamp(strokeImage!, strokeSource!, x, y, params));
+    const source = strokeSource;
+    const baseOffsetX = cloneOffset?.x ?? 0;
+    const baseOffsetY = cloneOffset?.y ?? 0;
+    forEachStrokeTransform((transform) => {
+      // The sampled source is mirrored with the stamp, so the clone offset
+      // follows the copy's transform.
+      const offset = transform
+        ? transformDirection(transform, baseOffsetX, baseOffsetY)
+        : { x: baseOffsetX, y: baseOffsetY };
+      const params = {
+        radius,
+        alpha,
+        brush,
+        angle: transform ? transformAngle(transform, brush.angle) : brush.angle,
+        frame,
+        selection: store.selection,
+        layerOffsetX: offsetX,
+        layerOffsetY: offsetY,
+        cloneOffsetX: offset.x,
+        cloneOffsetY: offset.y,
+      };
+      forEachStamp(fromX, fromY, toX, toY, radius, (x, y) => {
+        const sx = transform ? transform.a * x + transform.c * y + transform.e : x;
+        const sy = transform ? transform.b * x + transform.d * y + transform.f : y;
+        cloneStamp(strokeImage!, source, sx, sy, params);
+      });
+    });
   } else if (strokeKind === 'heal' && strokeSource) {
     const frame = { dirX, dirY, distance: strokeDistance, seedX: strokeSeedX, seedY: strokeSeedY };
-    const params = {
-      radius,
-      alpha,
-      brush,
-      angle: brush.angle,
-      frame,
-      selection: store.selection,
-      layerOffsetX: offsetX,
-      layerOffsetY: offsetY,
-    };
-    forEachStamp(fromX, fromY, toX, toY, radius, (x, y) => healStamp(strokeImage!, strokeSource!, x, y, params));
+    const source = strokeSource;
+    forEachStrokeTransform((transform) => {
+      const params = {
+        radius,
+        alpha,
+        brush,
+        angle: transform ? transformAngle(transform, brush.angle) : brush.angle,
+        frame,
+        selection: store.selection,
+        layerOffsetX: offsetX,
+        layerOffsetY: offsetY,
+      };
+      forEachStamp(fromX, fromY, toX, toY, radius, (x, y) => {
+        const sx = transform ? transform.a * x + transform.c * y + transform.e : x;
+        const sy = transform ? transform.b * x + transform.d * y + transform.f : y;
+        healStamp(strokeImage!, source, sx, sy, params);
+      });
+    });
   } else if (strokeKind === 'knife') {
     const frame = { dirX, dirY, distance: strokeDistance, seedX: strokeSeedX, seedY: strokeSeedY };
-    const params = {
-      radius,
-      strength: alpha,
-      smear: store.knifeSmear,
-      brush,
-      angle: brush.angle,
-      frame,
-      selection: store.selection,
-      layerOffsetX: offsetX,
-      layerOffsetY: offsetY,
-      dirX,
-      dirY,
-    };
-    forEachStamp(fromX, fromY, toX, toY, radius, (x, y) => knifeStamp(strokeImage!, x, y, params));
+    forEachStrokeTransform((transform) => {
+      // Mirrored copies smear in the mirrored direction.
+      const direction = transform ? transformDirection(transform, dirX, dirY) : { x: dirX, y: dirY };
+      const params = {
+        radius,
+        strength: alpha,
+        smear: store.knifeSmear,
+        brush,
+        angle: transform ? transformAngle(transform, brush.angle) : brush.angle,
+        frame,
+        selection: store.selection,
+        layerOffsetX: offsetX,
+        layerOffsetY: offsetY,
+        dirX: direction.x,
+        dirY: direction.y,
+      };
+      forEachStamp(fromX, fromY, toX, toY, radius, (x, y) => {
+        const sx = transform ? transform.a * x + transform.c * y + transform.e : x;
+        const sy = transform ? transform.b * x + transform.d * y + transform.f : y;
+        knifeStamp(strokeImage!, sx, sy, params);
+      });
+    });
   } else {
     // Brush / eraser: stamp along the segment, advancing the stroke-space
     // distance so the texture travels with the brush, and jittering the tip.
@@ -2346,33 +2544,61 @@ function paintStrokeSegment(
           ? (hash01(strokeJitterSeed + strokeStampIndex * 2654435761) * 2 - 1) * brush.rotationJitter
           : 0;
       strokeStampIndex++;
-      const params = {
-        radius,
-        color: store.foreground,
-        alpha,
-        selection: store.selection,
-        erase: strokeKind === 'eraser',
-        brush,
-        angle: brush.angle + angleOffset,
-        frame: { dirX, dirY, distance: strokeDistance + segmentLength * t, seedX: strokeSeedX, seedY: strokeSeedY },
-        strokeMask,
-        strokeBase,
-        offsetX,
-        offsetY,
-      };
-      stampBrush(strokeImage, x, y, params);
+      const frame = { dirX, dirY, distance: strokeDistance + segmentLength * t, seedX: strokeSeedX, seedY: strokeSeedY };
+      forEachStrokeTransform((transform) => {
+        const params = {
+          radius,
+          color: store.foreground,
+          alpha,
+          selection: store.selection,
+          erase: strokeKind === 'eraser',
+          brush,
+          angle: transform ? transformAngle(transform, brush.angle + angleOffset) : brush.angle + angleOffset,
+          frame,
+          strokeMask,
+          strokeBase,
+          offsetX,
+          offsetY,
+        };
+        const sx = transform ? transform.a * x + transform.c * y + transform.e : x;
+        const sy = transform ? transform.b * x + transform.d * y + transform.f : y;
+        stampBrush(strokeImage!, sx, sy, params);
+      });
     }
   }
   strokeDistance += segmentLength;
   // Only the segment's bounding box (expanded by the brush reach) changed, so
   // hand the renderer that damage rectangle instead of a full-document update.
+  // With symmetry on, every copy's box is scheduled as damage instead.
   const reach = radius + 1 + (brush.edgeTexture > 0 ? radius * 0.4 : 0);
-  schedulePaintUpdate(
-    Math.min(fromX, toX) - reach,
-    Math.min(fromY, toY) - reach,
-    Math.max(fromX, toX) + reach,
-    Math.max(fromY, toY) + reach,
-  );
+  const minX = Math.min(fromX, toX) - reach;
+  const minY = Math.min(fromY, toY) - reach;
+  const maxX = Math.max(fromX, toX) + reach;
+  const maxY = Math.max(fromY, toY) + reach;
+  if (strokeTransforms) {
+    for (const transform of strokeTransforms) {
+      let copyMinX = Infinity;
+      let copyMinY = Infinity;
+      let copyMaxX = -Infinity;
+      let copyMaxY = -Infinity;
+      for (const [cornerX, cornerY] of [
+        [minX, minY],
+        [maxX, minY],
+        [maxX, maxY],
+        [minX, maxY],
+      ] as [number, number][]) {
+        const tx = transform.a * cornerX + transform.c * cornerY + transform.e;
+        const ty = transform.b * cornerX + transform.d * cornerY + transform.f;
+        if (tx < copyMinX) copyMinX = tx;
+        if (tx > copyMaxX) copyMaxX = tx;
+        if (ty < copyMinY) copyMinY = ty;
+        if (ty > copyMaxY) copyMaxY = ty;
+      }
+      schedulePaintUpdate(copyMinX, copyMinY, copyMaxX, copyMaxY);
+    }
+  } else {
+    schedulePaintUpdate(minX, minY, maxX, maxY);
+  }
 }
 
 // --- Clipboard paste (as a new layer) ---
@@ -2566,7 +2792,10 @@ window.addEventListener('keydown', (event) => {
     return;
   }
   if (event.key === 'Escape') {
-    if (floating) {
+    if (store.symmetry.transformMode) {
+      symmetryDrag = null;
+      store.setSymmetry({ transformMode: false });
+    } else if (floating) {
       cancelFloating();
     } else {
       store.clearSelection();
@@ -2693,10 +2922,12 @@ function render(): void {
       const context = canvas.getContext('2d');
       const damage = store.lastDamage;
       if (context) {
-        // Local edits (strokes) only repaint their dirty rectangle; anything
+        // Local edits (strokes) only repaint their dirty rectangles; anything
         // else (or a canvas that was just cleared) needs the full image.
-        if (damage && canvasValid) {
-          context.putImageData(img, 0, 0, damage.x, damage.y, damage.width, damage.height);
+        if (damage && damage.length > 0 && canvasValid) {
+          for (const rect of damage) {
+            context.putImageData(img, 0, 0, rect.x, rect.y, rect.width, rect.height);
+          }
         } else {
           context.putImageData(img, 0, 0);
           canvasValid = true;
@@ -2799,6 +3030,7 @@ function render(): void {
   paletteButton.disabled = store.working;
   adjustmentsButton.disabled = store.working;
   effectsButton.disabled = store.working;
+  modifiersButton.disabled = store.working;
   layersButton.disabled = store.working;
   settingsButton.disabled = store.working;
   openButton.disabled = store.working;

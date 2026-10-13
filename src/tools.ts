@@ -462,13 +462,14 @@ function clamp01(value: number): number {
 
 // Scanline flood fill from a document-space seed position, constrained by the
 // selection and matching colors within the tolerance of the seed pixel. Returns
-// the document-space bounds of the painted pixels (null when nothing matched).
+// the document-space bounds of the painted pixels plus a layer-space mask of
+// them (null when nothing matched).
 export function floodFill(
   image: ImageData,
   seedX: number,
   seedY: number,
   params: FillParams,
-): { x: number; y: number; width: number; height: number } | null {
+): { x: number; y: number; width: number; height: number; mask: Uint8Array } | null {
   const { width, height, data } = image;
   const startX = Math.floor(seedX - params.offsetX);
   const startY = Math.floor(seedY - params.offsetY);
@@ -588,5 +589,13 @@ export function floodFill(
   if (maxX < 0) {
     return null;
   }
-  return { x: minX + offsetX, y: minY + offsetY, width: maxX - minX + 1, height: maxY - minY + 1 };
+  // Layer-space mask of the painted pixels, used by drawing modifiers to
+  // mirror the fill result.
+  const mask = new Uint8Array(width * height);
+  for (let i = 0; i < state.length; i++) {
+    if (state[i] === 3) {
+      mask[i] = 1;
+    }
+  }
+  return { x: minX + offsetX, y: minY + offsetY, width: maxX - minX + 1, height: maxY - minY + 1, mask };
 }

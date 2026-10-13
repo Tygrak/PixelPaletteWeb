@@ -345,6 +345,11 @@ body {
   cursor: default;
 }
 
+.btn.active {
+  background: #7d8785;
+  outline: 1px solid #000;
+}
+
 .toolbar-btn {
   background: var(--bg-dark);
 }
@@ -443,6 +448,13 @@ input[type='checkbox'] {
   color: #8f9998;
   font-size: 12px;
   text-align: center;
+}
+
+.panel-hint {
+  margin-top: 10px;
+  color: #8f9998;
+  font-size: 12px;
+  line-height: 1.5;
 }
 
 /* --- Tabs --- */

@@ -10,6 +10,7 @@ import {
   duplicateLayer as duplicateLayerData,
   Layer,
 } from './layers';
+import { SymmetryState } from './modifiers';
 import { Selection } from './selection';
 import { loadSettings, saveSettings, Settings } from './settings';
 import { ToolId } from './tools';
@@ -42,6 +43,13 @@ function makeFrame(): Frame {
 
 type Listener = () => void;
 
+export interface DamageRect {
+  x: number;
+  y: number;
+  width: number;
+  height: number;
+}
+
 const HISTORY_LIMIT = 15;
 
 // Central editor state: frames, history, tools and selection.
@@ -69,6 +77,18 @@ export class Store {
   wandTolerance = 32;
   fillTolerance = 32;
 
+  // Drawing modifiers: the symmetry guide is shared across frames and tools.
+  symmetry: SymmetryState = {
+    enabled: false,
+    mode: 'mirror',
+    cx: 0,
+    cy: 0,
+    angle: Math.PI / 2,
+    length: 0,
+    segments: 2,
+    transformMode: false,
+  };
+
   textSize = 48;
   textFont = 'sans-serif';
   textBold = false;
@@ -82,8 +102,10 @@ export class Store {
   revision = 0;
 
   // When the last change was local (paint strokes), the document-space
-  // rectangle it touched; null means the whole canvas needs repainting.
-  lastDamage: { x: number; y: number; width: number; height: number } | null = null;
+  // rectangles it touched; null means the whole canvas needs repainting.
+  // Several rectangles are kept (instead of one union) so symmetric strokes
+  // far from the guide center do not inflate the repainted area.
+  lastDamage: DamageRect[] | null = null;
 
   private compositeCache: ImageData | null = null;
   private listeners: Listener[] = [];
@@ -138,22 +160,32 @@ export class Store {
   }
 
   // Fast path for local edits (brush strokes): only the given document-space
-  // rectangle changed, so the cached composite is patched in place and the
-  // renderer can update just that part of the canvas.
-  notifyArea(x: number, y: number, width: number, height: number): void {
+  // rectangles changed, so the cached composite is patched in place and the
+  // renderer can update just those parts of the canvas. All rectangles are
+  // patched and rendered together, in a single emit.
+  notifyAreas(rects: DamageRect[]): void {
     if (this.layers.length === 0 || this.width === 0 || this.height === 0) {
       return;
     }
-    const x0 = Math.max(0, Math.floor(x));
-    const y0 = Math.max(0, Math.floor(y));
-    const x1 = Math.min(this.width, Math.ceil(x + width));
-    const y1 = Math.min(this.height, Math.ceil(y + height));
-    if (x1 <= x0 || y1 <= y0) {
+    const clamped: DamageRect[] = [];
+    for (const rect of rects) {
+      const x0 = Math.max(0, Math.floor(rect.x));
+      const y0 = Math.max(0, Math.floor(rect.y));
+      const x1 = Math.min(this.width, Math.ceil(rect.x + rect.width));
+      const y1 = Math.min(this.height, Math.ceil(rect.y + rect.height));
+      if (x1 <= x0 || y1 <= y0) {
+        continue;
+      }
+      clamped.push({ x: x0, y: y0, width: x1 - x0, height: y1 - y0 });
+    }
+    if (clamped.length === 0) {
       return;
     }
     if (this.compositeCache !== null) {
-      compositeRegion(this.compositeCache, this.layers, x0, y0, x1 - x0, y1 - y0);
-      this.lastDamage = { x: x0, y: y0, width: x1 - x0, height: y1 - y0 };
+      for (const rect of clamped) {
+        compositeRegion(this.compositeCache, this.layers, rect.x, rect.y, rect.width, rect.height);
+      }
+      this.lastDamage = clamped;
     } else {
       // No cached composite yet; the next render rebuilds it in full.
       this.lastDamage = null;
@@ -161,6 +193,10 @@ export class Store {
     this.revision++;
     this.frames[this.currentFrame].contentRevision++;
     this.emit();
+  }
+
+  notifyArea(x: number, y: number, width: number, height: number): void {
+    this.notifyAreas([{ x, y, width, height }]);
   }
 
   get activeLayer(): Layer | null {
@@ -218,6 +254,19 @@ export class Store {
     }
   }
 
+  // Re-centers the symmetry guide on a freshly opened document.
+  private recenterSymmetry(): void {
+    if (this.width <= 0 || this.height <= 0) {
+      return;
+    }
+    this.symmetry = {
+      ...this.symmetry,
+      cx: this.width / 2,
+      cy: this.height / 2,
+      length: Math.max(this.width, this.height),
+    };
+  }
+
   pushHistory(): void {
     if (this.layers.length === 0) {
       return;
@@ -264,6 +313,7 @@ export class Store {
     this.frames = [frame];
     this.currentFrame = 0;
     this.selection = null;
+    this.recenterSymmetry();
     this.notify();
   }
 
@@ -290,6 +340,7 @@ export class Store {
     this.frames = [frame];
     this.currentFrame = 0;
     this.selection = null;
+    this.recenterSymmetry();
     this.notify();
   }
 
@@ -412,6 +463,7 @@ export class Store {
     this.frames = [frame];
     this.currentFrame = 0;
     this.selection = null;
+    this.recenterSymmetry();
     this.notify();
   }
 
@@ -668,6 +720,11 @@ export class Store {
 
   setFillTolerance(tolerance: number): void {
     this.fillTolerance = tolerance;
+    this.emit();
+  }
+
+  setSymmetry(patch: Partial<SymmetryState>): void {
+    this.symmetry = { ...this.symmetry, ...patch };
     this.emit();
   }
 
