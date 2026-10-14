@@ -793,7 +793,14 @@ canvas.addEventListener('pointermove', (event) => {
         return;
     }
 
-    if (store.activeTool === 'eyedropper' || ((store.activeTool === 'brush' || store.activeTool === 'bucket') && event.altKey)) {
+    // The eyedropper (and Alt+brush/bucket) previews the color under the
+    // cursor while hovering. With a color picker open the canvas samples into
+    // it, so show the same preview there.
+    if (
+        getActiveColorPicker() !== null ||
+        store.activeTool === 'eyedropper' ||
+        ((store.activeTool === 'brush' || store.activeTool === 'bucket') && event.altKey)
+    ) {
         showSamplePreview(event.clientX, event.clientY, sampleColorAt(img, point.x, point.y));
     } else {
         hideSamplePreview();

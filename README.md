@@ -31,8 +31,8 @@ npm run preview  # serve the production build
   compositing, and a compact layer list in the sidebar.
 - **Animation:** a frame timeline with playback, onion skinning, and export as a
   sprite sheet or separate images.
-- **Palette & dithering:** median-cut, K-means, HML-sector and duo-tone
-  palettes; threshold, random, ordered (Bayer), Floyd–Steinberg and
+- **Palette & dithering:** median-cut, K-means, HML-sector, hue-cluster and
+  duo-tone palettes; threshold, random, ordered (Bayer), Floyd–Steinberg and
   min-average-error dithering.
 - **Adjustments:** resize, rotate, flip, HSL shift, blur, and compare.
 - **Effects:** Sobel edge detection with hysteresis and auto thresholds.

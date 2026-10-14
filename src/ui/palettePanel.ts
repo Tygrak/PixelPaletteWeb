@@ -2,7 +2,7 @@ import { colorToHex, colorToHsl, distinctColors, hexToColor, hslToColor, RGB } f
 import { AppContext } from '../context';
 import { button, colorSwatch, createDockPanel, createTabs, DockPanel, h, num, numeric, rowHint } from '../shared/dom';
 import { loadTextFile, saveTextFile } from '../shared/files';
-import { fakeDuoTone, kMeans, medianCut, sectorsHighMidLow, sortColors } from '../core/palette';
+import { fakeDuoTone, hueClusters, kMeans, medianCut, sectorsHighMidLow, sortColors, sortHueClusters } from '../core/palette';
 
 export function openPalettePanel(ctx: AppContext, onClose?: () => void): DockPanel {
     let unlisten: (() => void) | null = null;
@@ -157,6 +157,44 @@ export function openPalettePanel(ctx: AppContext, onClose?: () => void): DockPan
         ]),
     ]);
 
+    // --- Hue Clusters tab ---
+    const hueClustersAmount = numeric(3, { min: 2, width: 200 });
+    const hueClustersPerCluster = numeric(2, { min: 1, width: 200 });
+    const hueClustersTab = h('div', { class: 'tab-content' }, [
+        rowHint(
+            'Hue clusters:',
+            'The occupied hue range is split into this many equal parts, so a dominant hue cannot crowd out rarer ones; parts with no colors are skipped. The darkest and brightest image colors are always included.',
+            hueClustersAmount,
+        ),
+        rowHint(
+            'Colors per cluster:',
+            'Colors picked from each hue cluster, chosen to be as far apart from each other as possible.',
+            hueClustersPerCluster,
+        ),
+        h('div', { class: 'button-row' }, [
+            button('Preview Hue Clusters', async () => {
+                if (!store.activeImage) {
+                    return;
+                }
+                const amount = Math.trunc(num(hueClustersAmount));
+                const image = store.activeImage;
+                const result = await ctx.runTask('Sorting image', () => sortHueClusters(image, amount));
+                ctx.applyImage(result);
+            }),
+            button('Generate Hue Clusters Palette', async () => {
+                if (!store.activeImage) {
+                    return;
+                }
+                const amount = Math.trunc(num(hueClustersAmount));
+                const perCluster = Math.trunc(num(hueClustersPerCluster));
+                const image = store.activeImage;
+                store.palette = await ctx.runTask('Generating palette', () => hueClusters(image, amount, perCluster));
+                selectedIndex = -1;
+                paletteChanged();
+            }),
+        ]),
+    ]);
+
     // --- Duo Tone tab ---
     const duoToneAmount = numeric(16, { min: 2, width: 200 });
     const duoToneHue = numeric(0, { min: 0, max: 360, width: 200 });
@@ -233,6 +271,7 @@ export function openPalettePanel(ctx: AppContext, onClose?: () => void): DockPan
             { label: 'Median Cut', content: medianCutTab },
             { label: 'K-Means', content: kMeansTab },
             { label: 'HML', content: hmlTab },
+            { label: 'Hue Clusters', content: hueClustersTab },
             { label: 'Duo Tone', content: duoToneTab },
             { label: 'Import/Export', content: importExportTab },
         ]),

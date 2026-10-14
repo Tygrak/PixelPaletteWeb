@@ -10,7 +10,9 @@ const HUE_WIDTH = 20;
 
 // The color picker is a non-modal floating panel. While it is open, the main
 // canvas routes clicks here so the user can sample a color from the image.
+// Only one picker exists at a time: opening a new one cancels the previous.
 let activePicker: ((color: RGB) => void) | null = null;
+let closeActivePicker: (() => void) | null = null;
 
 export function getActiveColorPicker(): ((color: RGB) => void) | null {
     return activePicker;
@@ -18,6 +20,11 @@ export function getActiveColorPicker(): ((color: RGB) => void) | null {
 
 export function selectColorDialog(initial?: RGB, onChange?: (color: RGB) => void): Promise<RGB> {
     return new Promise<RGB>((resolve) => {
+        // Opening a picker while another one is still open cancels (closes) the
+        // old one, which resolves with its original color like a dismissed dialog.
+        closeActivePicker?.();
+        closeActivePicker = null;
+
         const original: RGB = initial ? { ...initial } : { r: 0, g: 0, b: 0 };
         let current: RGB = { ...original };
         let colorChanged = false;
@@ -288,6 +295,7 @@ export function selectColorDialog(initial?: RGB, onChange?: (color: RGB) => void
             () => {
                 if (activePicker === pick) {
                     activePicker = null;
+                    closeActivePicker = null;
                 }
                 // Ok confirms the edited color; dismissing (Escape or ✕) keeps the
                 // original color for regular pickers. Live pickers have no cancel, so
@@ -325,5 +333,6 @@ export function selectColorDialog(initial?: RGB, onChange?: (color: RGB) => void
         syncRgb();
 
         activePicker = pick;
+        closeActivePicker = dialog.close;
     });
 }

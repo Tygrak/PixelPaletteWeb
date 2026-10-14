@@ -35,7 +35,7 @@ src/
     tools.ts         Tool ids/shortcuts + per-stamp pixel algorithms
     brushes.ts       Data-driven brush definitions + coverage/texture math
     brushLibrary.ts  Brush overrides + custom brushes (persisted)
-    palette.ts       Median Cut, K-Means, HML sectors, Duo Tone, sorting
+    palette.ts       Median Cut, K-Means, HML sectors, hue clusters, Duo Tone, sorting
     dither.ts        Threshold, Random, Ordered, Floyd–Steinberg, MinAvgErr
     adjust.ts        HSL shift, separable blur
     effects.ts       Edge detection (Sobel + hysteresis + dilation)
