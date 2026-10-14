@@ -1,7 +1,8 @@
 // Drawing modifiers: the symmetry guide (mirror / rotational) plus the math
 // that mirrors paint strokes and fills around it.
 
-import { clamp } from '../shared/color';
+import { clamp, getMinDistance, RGB } from '../shared/color';
+import { createEmptyImage } from '../shared/image';
 
 export type SymmetryMode = 'mirror' | 'rotational';
 
@@ -24,6 +25,42 @@ export interface SymmetryState {
 
 export const MIN_SYMMETRY_SEGMENTS = 2;
 export const MAX_SYMMETRY_SEGMENTS = 32;
+
+// Palette lock: while enabled, paint colors snap to the nearest palette color;
+// optionally the image is remapped whenever the palette changes.
+export interface PaletteLockState {
+    enabled: boolean;
+    applyOnPaletteChange: boolean;
+}
+
+// The nearest palette color (the color itself when the palette is empty).
+export function snapToPalette(color: RGB, palette: RGB[]): RGB {
+    if (palette.length === 0) {
+        return color;
+    }
+    return getMinDistance(color, palette);
+}
+
+// Snaps every pixel's RGB to the nearest palette color. Unlike the dither
+// Threshold pass (`closestColor`), alpha is preserved, so transparent pixels
+// stay transparent and remapping never makes the image opaque.
+export function remapToPalette(image: ImageData, palette: RGB[]): ImageData {
+    const result = createEmptyImage(image.width, image.height);
+    const source = image.data;
+    const target = result.data;
+    for (let i = 0; i < source.length; i += 4) {
+        const alpha = source[i + 3];
+        if (alpha === 0) {
+            continue;
+        }
+        const color = getMinDistance({ r: source[i], g: source[i + 1], b: source[i + 2] }, palette);
+        target[i] = color.r;
+        target[i + 1] = color.g;
+        target[i + 2] = color.b;
+        target[i + 3] = alpha;
+    }
+    return result;
+}
 
 // Affine transform of the 2x2 linear part plus translation:
 // x' = a * x + c * y + e, y' = b * x + d * y + f

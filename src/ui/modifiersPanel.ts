@@ -1,5 +1,5 @@
 import { AppContext } from '../context';
-import { button, createDockPanel, createTabs, DockPanel, h, num, numeric, rowHint } from '../shared/dom';
+import { accordionSection, button, createDockPanel, DockPanel, h, num, numeric, rowHint } from '../shared/dom';
 import { MAX_SYMMETRY_SEGMENTS, MIN_SYMMETRY_SEGMENTS, SymmetryMode } from '../core/modifiers';
 
 export function openModifiersPanel(ctx: AppContext, onClose?: () => void): DockPanel {
@@ -66,7 +66,7 @@ export function openModifiersPanel(ctx: AppContext, onClose?: () => void): DockP
     });
     usageHint.style.display = 'none';
 
-    const symmetryTab = h('div', { class: 'tab-content' }, [
+    const symmetryBody = h('div', {}, [
         rowHint(
             'Enabled:',
             'While enabled, brush, eraser, clone, heal, knife and paint bucket strokes are mirrored live.',
@@ -78,8 +78,47 @@ export function openModifiersPanel(ctx: AppContext, onClose?: () => void): DockP
         h('div', { class: 'button-row' }, [centerButton]),
         usageHint,
     ]);
+    const symmetrySection = accordionSection(
+        'Symmetry',
+        'Mirror or rotate brush strokes and paint-bucket fills around a guide line.',
+        symmetryBody,
+    );
 
-    panel.body.append(createTabs([{ label: 'Symmetry', content: symmetryTab }]));
+    // --- Palette Lock ---
+
+    const lockCheckbox = document.createElement('input');
+    lockCheckbox.type = 'checkbox';
+    lockCheckbox.addEventListener('change', () => store.setPaletteLock({ enabled: lockCheckbox.checked }));
+
+    const autoApplyCheckbox = document.createElement('input');
+    autoApplyCheckbox.type = 'checkbox';
+    autoApplyCheckbox.addEventListener('change', () =>
+        store.setPaletteLock({ applyOnPaletteChange: autoApplyCheckbox.checked }),
+    );
+
+    const applyButton = button('Apply Palette to Image', () => void ctx.applyPaletteToImage());
+    applyButton.title = "Remap the active layer's pixels to the nearest palette colors.";
+
+    const paletteLockBody = h('div', {}, [
+        rowHint(
+            'Lock drawing:',
+            'Brush, paint bucket and text colors snap to the nearest palette color while enabled.',
+            lockCheckbox,
+        ),
+        rowHint(
+            'Apply on palette change:',
+            'When a palette color is edited, recolor every matching pixel of the active layer to the new color.',
+            autoApplyCheckbox,
+        ),
+        h('div', { class: 'button-row' }, [applyButton]),
+    ]);
+    const paletteLockSection = accordionSection(
+        'Palette Lock',
+        'Keep drawing (and optionally the image) on the palette colors.',
+        paletteLockBody,
+    );
+
+    panel.body.append(symmetrySection, paletteLockSection);
 
     const sync = (): void => {
         const sym = store.symmetry;
@@ -93,6 +132,10 @@ export function openModifiersPanel(ctx: AppContext, onClose?: () => void): DockP
         segmentsRow.style.display = sym.mode === 'rotational' ? 'flex' : 'none';
         usageHint.style.display = sym.transformMode ? 'block' : 'none';
         centerButton.disabled = store.width === 0 || store.height === 0;
+
+        lockCheckbox.checked = store.paletteLock.enabled;
+        autoApplyCheckbox.checked = store.paletteLock.applyOnPaletteChange;
+        applyButton.disabled = store.working || store.palette.length === 0 || !store.activeImage;
     };
     sync();
     unlisten = store.onChange(sync);

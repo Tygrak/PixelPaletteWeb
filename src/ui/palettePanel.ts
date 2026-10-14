@@ -5,7 +5,11 @@ import { loadTextFile, saveTextFile } from '../shared/files';
 import { fakeDuoTone, kMeans, medianCut, sectorsHighMidLow, sortColors } from '../core/palette';
 
 export function openPalettePanel(ctx: AppContext, onClose?: () => void): DockPanel {
-    const panel = createDockPanel(ctx.dock, 'Palette', onClose);
+    let unlisten: (() => void) | null = null;
+    const panel = createDockPanel(ctx.dock, 'Palette', () => {
+        unlisten?.();
+        onClose?.();
+    });
     const { store } = ctx;
 
     // --- Palette Colors tab ---
@@ -32,14 +36,14 @@ export function openPalettePanel(ctx: AppContext, onClose?: () => void): DockPan
                 item.addEventListener('dblclick', async () => {
                     const wasActive = colorToHex(store.foreground) === colorToHex(store.palette[index]);
                     const result = await ctx.selectColor(store.palette[index]);
-                    store.palette[index] = result;
+                    store.setPaletteColor(index, result);
                     // Editing the color that is currently in use also applies it as the
                     // current brush/text color.
                     if (wasActive) {
                         store.setForeground(result);
                     }
                     selectedIndex = index;
-                    renderList();
+                    paletteChanged();
                 });
                 list.append(item);
                 listItems.push(item);
@@ -50,9 +54,19 @@ export function openPalettePanel(ctx: AppContext, onClose?: () => void): DockPan
         listItems.forEach((item, index) => {
             item.classList.toggle('selected', index === selectedIndex);
         });
+    };
+
+    // Re-renders the list and notifies the rest of the UI after a palette
+    // mutation made directly in this panel.
+    const paletteChanged = (): void => {
+        renderList();
         store.emit();
     };
+
     renderList();
+    // The palette can also change outside this panel (options-bar strip, undo,
+    // Restore), so keep the list in sync with the store.
+    unlisten = store.onChange(renderList);
 
     const colorsTab = h('div', { class: 'tab-content' }, [
         h('div', { class: 'fill' }, [list]),
@@ -60,19 +74,19 @@ export function openPalettePanel(ctx: AppContext, onClose?: () => void): DockPan
             button('Clear Palette', () => {
                 store.palette = [];
                 selectedIndex = -1;
-                renderList();
+                paletteChanged();
             }),
             button('Remove Color', () => {
                 if (selectedIndex >= 0 && selectedIndex < store.palette.length) {
                     store.palette.splice(selectedIndex, 1);
                     selectedIndex = -1;
-                    renderList();
+                    paletteChanged();
                 }
             }),
             button('Add Color', async () => {
                 const result = await ctx.selectColor();
                 store.palette.push(result);
-                renderList();
+                paletteChanged();
             }),
         ]),
     ]);
@@ -99,7 +113,7 @@ export function openPalettePanel(ctx: AppContext, onClose?: () => void): DockPan
                 const image = store.activeImage;
                 store.palette = await ctx.runTask('Generating palette', () => medianCut(image, amount));
                 selectedIndex = -1;
-                renderList();
+                paletteChanged();
             }),
         ]),
     ]);
@@ -120,7 +134,7 @@ export function openPalettePanel(ctx: AppContext, onClose?: () => void): DockPan
                 const image = store.activeImage;
                 store.palette = await ctx.runTask('Generating palette', () => kMeans(image, amount, steps));
                 selectedIndex = -1;
-                renderList();
+                paletteChanged();
             }),
         ]),
     ]);
@@ -138,7 +152,7 @@ export function openPalettePanel(ctx: AppContext, onClose?: () => void): DockPan
                 const image = store.activeImage;
                 store.palette = await ctx.runTask('Generating palette', () => sectorsHighMidLow(image, amount));
                 selectedIndex = -1;
-                renderList();
+                paletteChanged();
             }),
         ]),
     ]);
@@ -167,7 +181,7 @@ export function openPalettePanel(ctx: AppContext, onClose?: () => void): DockPan
                 const saturation = num(duoToneSaturation);
                 store.palette = await ctx.runTask('Generating palette', () => fakeDuoTone(amount, hue, saturation));
                 selectedIndex = -1;
-                renderList();
+                paletteChanged();
             }),
             button('Add Duo Tone To Current Palette', async () => {
                 const amount = Math.trunc(num(duoToneAmount));
@@ -176,7 +190,7 @@ export function openPalettePanel(ctx: AppContext, onClose?: () => void): DockPan
                 const generated = await ctx.runTask('Generating palette', () => fakeDuoTone(amount, hue, saturation));
                 store.palette = distinctColors([...store.palette, ...generated]);
                 selectedIndex = -1;
-                renderList();
+                paletteChanged();
             }),
         ]),
     ]);
@@ -203,7 +217,7 @@ export function openPalettePanel(ctx: AppContext, onClose?: () => void): DockPan
                     .map((part) => hexToColor(part));
                 store.palette = distinctColors(colors);
                 selectedIndex = -1;
-                renderList();
+                paletteChanged();
             }),
             button('Export Palette', () => {
                 const separator = getSeparator();

@@ -8,6 +8,9 @@ export interface AppContext {
     // change immediately (live picker) instead of only on Ok.
     selectColor(initial?: RGB, onChange?: (color: RGB) => void): Promise<RGB>;
     applyImage(img: ImageData): void;
+    // Remaps the active layer's pixels to the nearest colors of the current
+    // palette (used by the Palette Lock modifier).
+    applyPaletteToImage(): Promise<void>;
     runTask<T>(status: string, task: () => T): Promise<T>;
     openImageFile(): Promise<ImageData | null>;
     saveImage(img: ImageData): void;

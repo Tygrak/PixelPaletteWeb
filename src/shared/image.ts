@@ -46,6 +46,19 @@ export function colorArrayFromImage(img: ImageData): RGB[] {
     return colors;
 }
 
+// Counts distinct RGB colors in an image, stopping early once `limit` unique
+// colors have been found.
+export function countUniqueColors(img: ImageData, limit: number): number {
+    const seen = new Set<number>();
+    for (let i = 0; i < img.data.length; i += 4) {
+        seen.add((img.data[i] << 16) | (img.data[i + 1] << 8) | img.data[i + 2]);
+        if (seen.size >= limit) {
+            break;
+        }
+    }
+    return seen.size;
+}
+
 // Same as ColorArrayFromBitmap, but the values are treated as an unbounded,
 // mutable working buffer (mirrors BitmapConvert.IntArrayFromBitmap).
 export function intArrayFromImage(img: ImageData): RGB[] {

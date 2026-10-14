@@ -18,19 +18,27 @@ npm run preview  # serve the production build
 
 - **Painting:** brush, eraser, clone stamp, spot healing, palette knife, paint
   bucket, and text.
+- **Brush library:** built-in brushes plus per-brush editing (tip, pressure
+  curves, textures) with duplicate and custom brushes under Settings → Brush
+  settings.
 - **Selections:** marquee, lasso, magic wand, plus a floating transform for
   moving/scaling/rotating the selected pixels.
+- **Symmetry modifiers:** mirror or rotational guides that copy brush strokes
+  and fills live; the guide can be dragged directly on the image.
+- **Palette lock modifier:** snap drawn colors to the palette, and optionally
+  recolor image pixels when a palette color is edited.
 - **Layers:** add, duplicate, reorder, merge, delete, per-layer visibility, live
   compositing, and a compact layer list in the sidebar.
 - **Animation:** a frame timeline with playback, onion skinning, and export as a
   sprite sheet or separate images.
-- **Palette & dithering:** median-cut, K-means and duo-tone
+- **Palette & dithering:** median-cut, K-means, HML-sector and duo-tone
   palettes; threshold, random, ordered (Bayer), Floyd–Steinberg and
   min-average-error dithering.
-- **Adjustments:** resize, rotate, flip, HSL shift, blur.
+- **Adjustments:** resize, rotate, flip, HSL shift, blur, and compare.
 - **Effects:** Sobel edge detection with hysteresis and auto thresholds.
-- Clipboard copy/paste, undo/redo, customizable save name/format, and a
-  checkerboard / black / white image backdrop.
+- Clipboard copy/paste, undo/redo, customizable save name/format, a
+  checkerboard / black / white image backdrop, and an optional minimap for
+  panning while zoomed in.
 
 ## Tool shortcuts
 

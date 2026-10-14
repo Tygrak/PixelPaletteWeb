@@ -106,7 +106,7 @@ export function commitText(): void {
                 font: store.textFont,
                 bold: store.textBold,
                 italic: store.textItalic,
-                color: store.foreground,
+                color: store.paintColor,
             },
         );
         hooks?.applyImage(updated);

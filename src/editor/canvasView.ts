@@ -487,7 +487,8 @@ export function redrawOverlay(): void {
         context.save();
         context.font = textFontString();
         context.textBaseline = 'top';
-        context.fillStyle = `rgb(${store.foreground.r}, ${store.foreground.g}, ${store.foreground.b})`;
+        const previewColor = store.paintColor;
+        context.fillStyle = `rgb(${previewColor.r}, ${previewColor.g}, ${previewColor.b})`;
         context.fillText(editing.content, editing.x, editing.y);
         if (isCaretOn()) {
             const width = context.measureText(editing.content).width;

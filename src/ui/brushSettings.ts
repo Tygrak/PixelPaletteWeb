@@ -16,7 +16,7 @@ import {
 } from '../core/brushLibrary';
 import { DEFAULT_BRUSH_ID, TextureKind } from '../core/brushes';
 import { clamp } from '../shared/color';
-import { h, num, numeric, rowHint } from '../shared/dom';
+import { accordionSection, h, num, numeric, rowHint } from '../shared/dom';
 import { Store } from '../core/store';
 
 const RAD_TO_DEG = 180 / Math.PI;
@@ -31,17 +31,7 @@ export interface BrushSettingsSection {
 export function createBrushSettingsSection(store: Store): BrushSettingsSection {
     let selectedId = store.brushId;
 
-    const section = h('div', { class: 'brush-settings' });
-
-    const toggle = h(
-        'button',
-        {
-            class: 'brush-settings-toggle',
-            title:
-                'Adjust every brush parameter, duplicate brushes and revert built-ins to their defaults. Changes are saved in this browser.',
-        },
-        [h('span', { class: 'brush-settings-arrow', text: '▶' }), h('span', { text: 'Brush settings' })],
-    );
+    const section = h('div');
 
     const select = h('select', { class: 'select' });
     select.title = 'Choose a brush to edit; this also selects it for painting.';
@@ -213,8 +203,11 @@ export function createBrushSettingsSection(store: Store): BrushSettingsSection {
     refreshSelect();
     renderDetails();
 
-    const root = h('div', { class: 'brush-settings-wrap' }, [toggle, section]);
-    toggle.addEventListener('click', () => root.classList.toggle('open'));
+    const root = accordionSection(
+        'Brush settings',
+        'Adjust every brush parameter, duplicate brushes and revert built-ins to their defaults. Changes are saved in this browser.',
+        section,
+    );
     section.append(
         rowHint('Edit brush:', 'Choose a brush to edit, or duplicate one into a new custom brush.', select, addButton),
         h('div', { class: 'divider' }),

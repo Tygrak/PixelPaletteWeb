@@ -64,6 +64,16 @@ export function openSettingsPanel(ctx: AppContext, onClose?: () => void): DockPa
         store.updateSettings({ minimap: minimapCheckbox.checked }),
     );
 
+    const paletteSizeInput = document.createElement('input');
+    paletteSizeInput.type = 'number';
+    paletteSizeInput.min = '1';
+    paletteSizeInput.max = '256';
+    paletteSizeInput.style.width = '100px';
+    paletteSizeInput.value = String(store.settings.paletteSize);
+    paletteSizeInput.addEventListener('change', () =>
+        store.updateSettings({ paletteSize: Math.max(1, Math.round(Number(paletteSizeInput.value) || 1)) }),
+    );
+
     const backdropSelect = h('select', { class: 'select' }, [
         h('option', { value: 'checker', text: 'Checkerboard' }),
         h('option', { value: 'black', text: 'Pure black' }),
@@ -89,6 +99,11 @@ export function openSettingsPanel(ctx: AppContext, onClose?: () => void): DockPa
                 'Start new files fully transparent instead of filling them with the background color.',
                 blankCheckbox,
             ),
+            rowHint(
+                'Default palette size:',
+                'Number of colors generated from an image when it is imported. Images with fewer colors produce a smaller palette.',
+                paletteSizeInput,
+            ),
             rowHint('Image backdrop:', 'What is shown behind transparent pixels on the canvas.', backdropSelect),
             rowHint(
                 'Minimap:',
@@ -110,6 +125,9 @@ export function openSettingsPanel(ctx: AppContext, onClose?: () => void): DockPa
         }
         if (document.activeElement !== heightInput) {
             heightInput.value = String(store.settings.canvasHeight);
+        }
+        if (document.activeElement !== paletteSizeInput) {
+            paletteSizeInput.value = String(store.settings.paletteSize);
         }
         swatch.style.background = store.settings.backgroundColor;
         animationCheckbox.checked = store.settings.animationMode;

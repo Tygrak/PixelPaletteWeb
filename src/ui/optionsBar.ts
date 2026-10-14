@@ -157,11 +157,10 @@ export function createOptionsBar(ctx: AppContext): OptionsBar {
                 dot.addEventListener('dblclick', async () => {
                     const wasActive = colorToHex(store.foreground) === colorToHex(store.palette[index]);
                     const chosen = await ctx.selectColor(store.palette[index]);
-                    store.palette[index] = chosen;
+                    store.setPaletteColor(index, chosen);
                     if (wasActive) {
                         store.setForeground(chosen);
                     }
-                    store.emit();
                 });
                 paletteStrip.append(dot);
                 paletteDots.push(dot);

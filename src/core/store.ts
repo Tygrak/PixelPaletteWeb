@@ -10,7 +10,7 @@ import {
     duplicateLayer as duplicateLayerData,
     Layer,
 } from './layers';
-import { SymmetryState } from './modifiers';
+import { PaletteLockState, snapToPalette, SymmetryState } from './modifiers';
 import { Selection } from './selection';
 import { loadSettings, saveSettings, Settings } from './settings';
 import { ToolId } from './tools';
@@ -20,6 +20,9 @@ interface Snapshot {
     activeIndex: number;
     width: number;
     height: number;
+    // The palette travels with history so palette edits that recolored the
+    // image (palette lock) are undone/redone together with the pixels.
+    palette: RGB[];
 }
 
 // One animation frame: an independent document (its layers + active layer)
@@ -63,6 +66,9 @@ export class Store {
     height = 0;
 
     initial: ImageData | null = null;
+    // Palette as it was when the current document was opened; Restore resets
+    // the palette to this so the image and palette never desync.
+    initialPalette: RGB[] = [];
 
     palette: RGB[] = [rgb(0, 0, 0), rgb(255, 255, 255)];
 
@@ -88,6 +94,9 @@ export class Store {
         segments: 2,
         transformMode: false,
     };
+
+    // Palette lock: keeps drawn colors (and optionally the image) on palette.
+    paletteLock: PaletteLockState = { enabled: false, applyOnPaletteChange: false };
 
     textSize = 48;
     textFont = 'sans-serif';
@@ -236,6 +245,7 @@ export class Store {
             activeIndex: this.activeIndex,
             width: this.width,
             height: this.height,
+            palette: this.palette.map((color) => ({ ...color })),
         };
     }
 
@@ -244,6 +254,7 @@ export class Store {
         this.activeIndex = snapshot.activeIndex;
         this.width = snapshot.width;
         this.height = snapshot.height;
+        this.palette = snapshot.palette.map((color) => ({ ...color }));
         this.selection = null;
     }
 
@@ -307,6 +318,7 @@ export class Store {
         this.width = img.width;
         this.height = img.height;
         this.initial = img;
+        this.initialPalette = this.palette.map((color) => ({ ...color }));
         const frame = makeFrame();
         frame.layers = [createLayer(img.width, img.height, 'Background', cloneImage(img))];
         frame.activeIndex = 0;
@@ -323,6 +335,7 @@ export class Store {
     newDocument(width: number, height: number, background: RGB | null): void {
         this.width = width;
         this.height = height;
+        this.initialPalette = this.palette.map((color) => ({ ...color }));
         const frame = makeFrame();
         if (background) {
             const backgroundImage = fillImage(width, height, background);
@@ -457,6 +470,7 @@ export class Store {
         }
         this.width = this.initial.width;
         this.height = this.initial.height;
+        this.palette = this.initialPalette.map((color) => ({ ...color }));
         const frame = makeFrame();
         frame.layers = [createLayer(this.width, this.height, 'Background', cloneImage(this.initial))];
         frame.activeIndex = 0;
@@ -726,6 +740,52 @@ export class Store {
     setSymmetry(patch: Partial<SymmetryState>): void {
         this.symmetry = { ...this.symmetry, ...patch };
         this.emit();
+    }
+
+    setPaletteLock(patch: Partial<PaletteLockState>): void {
+        this.paletteLock = { ...this.paletteLock, ...patch };
+        this.emit();
+    }
+
+    // Replaces a palette entry. With the palette lock's apply-on-change option,
+    // every active-layer pixel that exactly matches the old color is recolored
+    // to the new one (unlike the nearest-color remap of applyPaletteToImage).
+    // The snapshot is recorded before either change, so undo/redo reverts the
+    // palette entry and the recolored pixels together.
+    setPaletteColor(index: number, color: RGB): void {
+        const previous = this.palette[index];
+        if (!previous) {
+            return;
+        }
+        if (previous.r === color.r && previous.g === color.g && previous.b === color.b) {
+            return;
+        }
+        if (!this.paletteLock.applyOnPaletteChange) {
+            this.palette[index] = color;
+            this.emit();
+            return;
+        }
+        const image = this.beginPaint();
+        this.palette[index] = color;
+        if (!image) {
+            this.emit();
+            return;
+        }
+        const data = image.data;
+        for (let i = 0; i < data.length; i += 4) {
+            if (data[i] === previous.r && data[i + 1] === previous.g && data[i + 2] === previous.b && data[i + 3] !== 0) {
+                data[i] = color.r;
+                data[i + 1] = color.g;
+                data[i + 2] = color.b;
+            }
+        }
+        this.notify();
+    }
+
+    // The foreground as used by paint operations: snapped to the nearest
+    // palette color while the palette lock modifier is enabled.
+    get paintColor(): RGB {
+        return this.paletteLock.enabled ? snapToPalette(this.foreground, this.palette) : this.foreground;
     }
 
     setTextSize(size: number): void {

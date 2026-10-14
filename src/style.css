@@ -702,10 +702,17 @@ input[type='checkbox'] {
 }
 
 /* --- Matrix grids --- */
+.row.matrix-row {
+    flex-direction: column;
+    align-items: stretch;
+    gap: 6px;
+}
+
 .matrix-grid {
     display: grid;
     gap: 3px;
     width: 320px;
+    max-width: 100%;
 }
 
 .matrix-grid input[type='number'] {
@@ -849,14 +856,14 @@ input[type='checkbox'] {
     outline-offset: 1px;
 }
 
-/* --- Brush editor (Settings panel) --- */
-.brush-settings-wrap {
+/* --- Accordion sections (Settings, Modifiers) --- */
+.accordion {
     margin-top: 12px;
     border-top: 1px solid var(--border);
     padding-top: 2px;
 }
 
-.brush-settings-toggle {
+.accordion-toggle {
     display: flex;
     align-items: center;
     gap: 8px;
@@ -872,33 +879,33 @@ input[type='checkbox'] {
     cursor: pointer;
 }
 
-.brush-settings-toggle:hover {
+.accordion-toggle:hover {
     background: var(--bg-control-hover);
 }
 
-.brush-settings-arrow {
+.accordion-arrow {
     display: inline-block;
     font-size: 10px;
     transition: transform 0.12s;
 }
 
-.brush-settings-wrap.open .brush-settings-arrow {
+.accordion.open .accordion-arrow {
     transform: rotate(90deg);
 }
 
-.brush-settings {
+.accordion-body {
     display: none;
 }
 
-.brush-settings-wrap.open .brush-settings {
+.accordion.open .accordion-body {
     display: block;
 }
 
-.brush-settings .row {
+.accordion-body .row {
     margin: 6px 0;
 }
 
-.brush-settings .divider {
+.accordion-body .divider {
     margin: 8px 0;
 }
 

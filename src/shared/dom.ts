@@ -231,6 +231,21 @@ export function createTabs(tabs: Tab[]): HTMLElement {
     return h('div', { class: 'tabs' }, [bar, panels]);
 }
 
+// Collapsible section used by the Settings and Modifiers panels: a toggle
+// header with a rotating arrow above a body shown while open.
+export function accordionSection(label: string, title: string, body: HTMLElement, open = false): HTMLElement {
+    const toggle = h('button', { class: 'accordion-toggle', title }, [
+        h('span', { class: 'accordion-arrow', text: '▶' }),
+        h('span', { text: label }),
+    ]);
+    const root = h('div', { class: open ? 'accordion open' : 'accordion' }, [
+        toggle,
+        h('div', { class: 'accordion-body' }, [body]),
+    ]);
+    toggle.addEventListener('click', () => root.classList.toggle('open'));
+    return root;
+}
+
 export function colorSwatch(color: RGB, className = 'swatch'): HTMLElement {
     const swatch = h('span', { class: className });
     swatch.style.background = `rgb(${color.r}, ${color.g}, ${color.b})`;

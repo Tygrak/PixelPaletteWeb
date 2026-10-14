@@ -16,6 +16,7 @@ export interface Settings {
     onionOpacity: number; // 0..1
     canvasBackdrop: CanvasBackdrop;
     minimap: boolean; // overview in the bottom-right corner for panning while zoomed in
+    paletteSize: number; // colors generated from an imported image
     saveFormat: SaveFormat;
     saveColumns: number; // 0 = auto
     saveFileName: string; // base name without extension
@@ -33,6 +34,7 @@ export const DEFAULT_SETTINGS: Settings = {
     onionOpacity: 0.4,
     canvasBackdrop: 'checker',
     minimap: false,
+    paletteSize: 8,
     saveFormat: 'current',
     saveColumns: 0,
     saveFileName: 'image',

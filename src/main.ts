@@ -20,7 +20,7 @@ import {
     toImagePoint,
     zoomAtPoint,
 } from './editor/canvasView';
-import { clamp, colorToHex, hexToColor, rgb, RGB } from './shared/color';
+import { clamp, colorToHex, distinctColors, hexToColor, rgb, RGB } from './shared/color';
 import { AppContext } from './context';
 import { h } from './shared/dom';
 import { imageDataFromBlob, loadImageFile, saveImageFile } from './shared/files';
@@ -36,9 +36,9 @@ import {
     startTransformDrag,
 } from './editor/floatingSelection';
 import { toolIcon } from './ui/icons';
-import { offsetImage, resizeImage } from './shared/image';
+import { countUniqueColors, offsetImage, resizeImage } from './shared/image';
 import { compositeLayers } from './core/layers';
-import { applySymmetrizedFill, hitTestSymmetry } from './core/modifiers';
+import { applySymmetrizedFill, hitTestSymmetry, remapToPalette } from './core/modifiers';
 import {
     continueStroke,
     endStroke,
@@ -85,8 +85,11 @@ async function copyText(text: string): Promise<void> {
 
 // --- Document lifecycle ---
 
-// Generates an 8-color palette (median cut) from an image. Runs on a small
-// downscaled sample so it stays fast for large images.
+// Generates a palette (median cut) from an image, using the default palette
+// size from settings. Runs on a small downscaled sample so it stays fast for
+// large images; images with fewer colors than the configured size produce a
+// smaller palette. Median cut can average different groups to the same color,
+// so duplicates are removed.
 function generateAutoPalette(image: ImageData): void {
     const maxDim = 256;
     const scale = Math.min(1, maxDim / Math.max(image.width, image.height));
@@ -94,7 +97,12 @@ function generateAutoPalette(image: ImageData): void {
         scale < 1
             ? resizeImage(image, Math.max(1, Math.round(image.width * scale)), Math.max(1, Math.round(image.height * scale)))
             : image;
-    const colors = medianCut(sample, 8);
+    const requested = Math.max(1, Math.round(store.settings.paletteSize));
+    const unique = countUniqueColors(sample, requested);
+    if (unique === 0) {
+        return;
+    }
+    const colors = distinctColors(medianCut(sample, Math.min(requested, unique)));
     if (colors.length > 0) {
         store.palette = colors;
         store.emit();
@@ -104,10 +112,12 @@ function generateAutoPalette(image: ImageData): void {
 function openDocument(image: ImageData, refreshPalette = false): void {
     commitFloating();
     const hadDocument = store.current !== null;
-    store.openImage(image);
+    // The palette is finalized before the document opens so the store records
+    // it as the document's initial palette (the Restore target).
     if (!hadDocument || refreshPalette) {
         generateAutoPalette(image);
     }
+    store.openImage(image);
 }
 
 const BASE_COLORS: RGB[] = [
@@ -129,9 +139,10 @@ function newDocument(width?: number, height?: number): void {
     const w = Math.max(1, width ?? store.settings.canvasWidth);
     const h = Math.max(1, height ?? store.settings.canvasHeight);
     const background = store.settings.blankNewImage ? null : hexToColor(store.settings.backgroundColor);
-    store.newDocument(w, h, background);
+    // Like openDocument, set the palette before the document so it becomes the
+    // document's initial palette (the Restore target).
     store.palette = BASE_COLORS.map((color) => ({ ...color }));
-    store.emit();
+    store.newDocument(w, h, background);
 }
 
 function saveDocument(): void {
@@ -186,6 +197,15 @@ const ctx: AppContext = {
         commitFloating();
         store.changeMainImage(img);
     },
+    applyPaletteToImage: async () => {
+        const image = store.activeImage;
+        if (!image || store.palette.length === 0 || store.working) {
+            return;
+        }
+        const palette = store.palette.slice();
+        const result = await ctx.runTask('Applying palette to image', () => remapToPalette(image, palette));
+        ctx.applyImage(result);
+    },
     runTask: async (status, task) => {
         commitFloating();
         store.working = true;
@@ -238,7 +258,8 @@ const toolbar = createToolbar({
         }
         const image = await loadImageFile();
         if (image) {
-            openDocument(image);
+            // Like a clipboard paste, opening an image derives the palette from it.
+            openDocument(image, true);
         }
     },
     onSave: () => saveDocument(),
@@ -592,7 +613,7 @@ canvas.addEventListener('pointerdown', (event) => {
                 break;
             }
             const fill = floodFill(image, point.x, point.y, {
-                color: store.foreground,
+                color: store.paintColor,
                 alpha: store.brushOpacity,
                 tolerance: store.fillTolerance,
                 selection: store.selection,

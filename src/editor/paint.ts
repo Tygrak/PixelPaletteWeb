@@ -328,7 +328,7 @@ function paintStrokeSegment(
             forEachStrokeTransform((transform) => {
                 const params = {
                     radius,
-                    color: store.foreground,
+                    color: store.paintColor,
                     alpha,
                     selection: store.selection,
                     erase: strokeKind === 'eraser',
