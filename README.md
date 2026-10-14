@@ -25,8 +25,9 @@ npm run preview  # serve the production build
   moving/scaling/rotating the selected pixels.
 - **Symmetry modifiers:** mirror or rotational guides that copy brush strokes
   and fills live; the guide can be dragged directly on the image.
-- **Palette lock modifier:** snap drawn colors to the palette, and optionally
-  recolor image pixels when a palette color is edited.
+- **Palette lock modifier:** keep drawn pixels on the palette (hard, opaque
+  palette colors even for soft brushes), and optionally recolor image pixels
+  when a palette color is edited.
 - **Layers:** add, duplicate, reorder, merge, delete, per-layer visibility, live
   compositing, and a compact layer list in the sidebar.
 - **Animation:** a frame timeline with playback, onion skinning, and export as a
@@ -73,6 +74,7 @@ Change the brush size with `[` and `]`.
 | Paste image as a new layer               | `Ctrl + V` |
 | Deselect                                 | `Esc` |
 | Delete selection (to transparency)       | `Delete` / `Backspace` |
+| Delete focused layer (after clicking a layer in the Layers list) | `Delete` / `Backspace` |
 | Play / pause animation (Animation mode)  | `Space` |
 
 ## Layer shortcuts

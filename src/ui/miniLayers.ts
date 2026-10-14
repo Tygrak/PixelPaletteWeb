@@ -171,6 +171,7 @@ export function createMiniLayers(store: Store, isFullPanelOpen: () => boolean): 
                     return;
                 }
                 store.setActiveLayer(i);
+                store.setLayerFocus(true);
             });
             row.addEventListener('pointerdown', (event) => onRowDown(event, row));
             row.addEventListener('pointermove', onRowMove);

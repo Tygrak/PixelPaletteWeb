@@ -1,7 +1,14 @@
 import { store } from '../appStore';
 import { pressureFactor, textureModulates } from '../core/brushes';
 import { clamp } from '../shared/color';
-import { symmetryTransforms, SymmetryTransform, transformAngle, transformDirection } from '../core/modifiers';
+import {
+    createPaletteSnap,
+    PaletteSnap,
+    symmetryTransforms,
+    SymmetryTransform,
+    transformAngle,
+    transformDirection,
+} from '../core/modifiers';
 import { cloneStamp, healStamp, knifeStamp, stampBrush, ToolId } from '../core/tools';
 
 // Brush-stroke engine: stamps a stroke segment by segment onto the active
@@ -27,6 +34,20 @@ let strokeStampIndex = 0;
 // plus a snapshot of the layer's pixels at stroke start to blend against.
 let strokeMask: Float32Array | null = null;
 let strokeBase: Uint8ClampedArray | null = null;
+// Palette lock state for the current stroke (snapper for sampled tools).
+let strokeLock = false;
+let strokeSnap: PaletteSnap | null = null;
+// While true the first stamp is held back because the pointer has not reported
+// a real pressure yet: tablets often report 0 for the first events of a stroke.
+let strokePending = false;
+let strokePendingMoves = 0;
+// Latest position seen while waiting, so a stroke that ends without ever
+// reporting pressure still paints its path (a tap paints a single dot).
+let strokePendingX = 0;
+let strokePendingY = 0;
+// Give up waiting after this many zero-pressure moves so a pointer that never
+// reports pressure still paints (at the minimum) instead of losing the stroke.
+const PENDING_MOVE_LIMIT = 6;
 
 // Clone Stamp source point / offset (document space).
 let cloneSource: { x: number; y: number } | null = null;
@@ -70,6 +91,10 @@ function beginStrokeState(textured: boolean, image: ImageData): void {
     strokeBase = textured ? new Uint8ClampedArray(image.data) : null;
     // The guide cannot move mid-stroke, so its transforms are captured once.
     strokeTransforms = store.symmetry.enabled ? symmetryTransforms(store.symmetry) : null;
+    // Palette lock is captured per stroke as well: painted pixels are forced to
+    // hard, opaque palette colors, and sampled tools snap their colors.
+    strokeLock = store.paletteLock.enabled && store.palette.length > 0;
+    strokeSnap = strokeLock ? createPaletteSnap(store.palette) : null;
 }
 
 // Runs `fn` for the original stamp and for every symmetric copy.
@@ -99,7 +124,17 @@ function startStroke(kind: StrokeKind, source: ImageData | null, image: ImageDat
     strokeLastY = y;
     const brushLike = kind === 'brush' || kind === 'eraser';
     beginStrokeState(brushLike && textureModulates(store.brush.texture), image);
-    paintStrokeSegment(x, y, x, y, pressure);
+    // Wait for a real pressure reading before painting the first stamp. Some
+    // tablets report 0 for the first events of a stroke; treating that as full
+    // pressure paints an oversized blob at the start. If pressure is already
+    // known, paint right away.
+    strokePending = pressure <= 0;
+    strokePendingMoves = 0;
+    strokePendingX = x;
+    strokePendingY = y;
+    if (!strokePending) {
+        paintStrokeSegment(x, y, x, y, pressure);
+    }
 }
 
 export function startBrushStroke(kind: 'brush' | 'eraser', image: ImageData, x: number, y: number, pressure: number): void {
@@ -122,12 +157,36 @@ export function startKnifeStroke(image: ImageData, x: number, y: number, pressur
 }
 
 export function continueStroke(x: number, y: number, pressure: number): void {
+    if (strokePending) {
+        if (pressure <= 0) {
+            strokePendingMoves++;
+            if (strokePendingMoves < PENDING_MOVE_LIMIT) {
+                // Still no real pressure: keep waiting, remembering the latest
+                // position so the eventual first segment covers the whole path.
+                strokePendingX = x;
+                strokePendingY = y;
+                return;
+            }
+            // The pointer never reports pressure; fall through and paint at zero
+            // (the minimum) instead of dropping the stroke.
+        }
+        strokePending = false;
+    }
     paintStrokeSegment(strokeLastX, strokeLastY, x, y, pressure);
     strokeLastX = x;
     strokeLastY = y;
 }
 
 export function endStroke(): void {
+    if (strokePending) {
+        // No real pressure ever arrived (a quick tap, or a pointer that does not
+        // report pressure). Paint the deferred path at full pressure so dots and
+        // short marks register as solid marks rather than a faint minimum. The
+        // lift event's own pressure is not used: it is often a small residual
+        // value as the pen leaves the tablet.
+        strokePending = false;
+        paintStrokeSegment(strokeLastX, strokeLastY, strokePendingX, strokePendingY, 1);
+    }
     // Paint anything still pending, then just refresh the UI: the stroke's
     // pixels were already rendered through the per-stroke damage updates, so
     // there is no need to recomposite the whole document again.
@@ -223,8 +282,10 @@ function paintStrokeSegment(
     const sizeFactor = pressureFactor(brush.pressure.sizeMin, brush.pressure.sizeCurve, pressure);
     const alphaFactor = pressureFactor(brush.pressure.alphaMin, brush.pressure.alphaCurve, pressure);
     const radius = Math.max(0.5, (store.brushSize / 2) * sizeFactor);
-    // Pixel brushes always stamp fully opaque, on/off pixels (pixel art).
-    const alpha = brush.pixel ? 1 : clamp(store.brushOpacity * alphaFactor, 0, 1);
+    // Pixel brushes always stamp fully opaque, on/off pixels (pixel art), and
+    // palette lock does the same so soft edges cannot leave off-palette or
+    // semi-transparent pixels behind.
+    const alpha = brush.pixel || strokeLock ? 1 : clamp(store.brushOpacity * alphaFactor, 0, 1);
 
     let dirX = toX - fromX;
     let dirY = toY - fromY;
@@ -259,6 +320,8 @@ function paintStrokeSegment(
                 layerOffsetY: offsetY,
                 cloneOffsetX: offset.x,
                 cloneOffsetY: offset.y,
+                paletteLock: strokeLock,
+                paletteSnap: strokeSnap,
             };
             forEachStamp(fromX, fromY, toX, toY, radius, (x, y) => {
                 const sx = transform ? transform.a * x + transform.c * y + transform.e : x;
@@ -279,6 +342,8 @@ function paintStrokeSegment(
                 selection: store.selection,
                 layerOffsetX: offsetX,
                 layerOffsetY: offsetY,
+                paletteLock: strokeLock,
+                paletteSnap: strokeSnap,
             };
             forEachStamp(fromX, fromY, toX, toY, radius, (x, y) => {
                 const sx = transform ? transform.a * x + transform.c * y + transform.e : x;
@@ -303,6 +368,8 @@ function paintStrokeSegment(
                 layerOffsetY: offsetY,
                 dirX: direction.x,
                 dirY: direction.y,
+                paletteLock: strokeLock,
+                paletteSnap: strokeSnap,
             };
             forEachStamp(fromX, fromY, toX, toY, radius, (x, y) => {
                 const sx = transform ? transform.a * x + transform.c * y + transform.e : x;
@@ -339,6 +406,7 @@ function paintStrokeSegment(
                     strokeBase,
                     offsetX,
                     offsetY,
+                    paletteLock: strokeLock,
                 };
                 const sx = transform ? transform.a * x + transform.c * y + transform.e : x;
                 const sy = transform ? transform.b * x + transform.d * y + transform.f : y;

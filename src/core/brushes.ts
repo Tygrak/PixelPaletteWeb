@@ -103,8 +103,9 @@ export const BRUSHES: Brush[] = [
         hardness: 1,
         antialias: true,
         pixel: false,
-        // Pressure mostly thins the tip and builds opacity.
-        pressure: { sizeMin: 0.35, sizeCurve: 1, alphaMin: 0.25, alphaCurve: 1 },
+        // Pressure thins the tip only; opacity stays full so taps and light
+        // presses still make solid marks.
+        pressure: { sizeMin: 0.35, sizeCurve: 1, alphaMin: 1, alphaCurve: 1 },
         spacing: 0.12,
         texture: NONE,
         lobes: 1,

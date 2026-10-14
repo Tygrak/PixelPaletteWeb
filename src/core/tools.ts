@@ -1,6 +1,7 @@
 // Tool definitions, keyboard shortcuts, and brush/eraser painting.
 
 import { Brush, brushCoverage, TextureFrame } from './brushes';
+import { PaletteSnap } from './modifiers';
 import { RGB } from '../shared/color';
 import { Selection } from './selection';
 
@@ -73,6 +74,9 @@ export interface BrushParams {
     // masks are also in document space).
     offsetX: number;
     offsetY: number;
+    // Palette lock: painted pixels become hard, fully opaque palette colors so
+    // soft edges cannot blend into off-palette or transparent pixels.
+    paletteLock: boolean;
 }
 
 export function stampBrush(
@@ -137,6 +141,13 @@ export function stampBrush(
                     data[pos + 1] = 0;
                     data[pos + 2] = 0;
                 }
+            } else if (params.paletteLock) {
+                // Fully opaque palette pixel: no coverage blending, so no
+                // off-palette or semi-transparent edge pixels.
+                data[pos] = color.r;
+                data[pos + 1] = color.g;
+                data[pos + 2] = color.b;
+                data[pos + 3] = 255;
             } else {
                 const destAlpha = src[pos + 3] / 255;
                 const outAlpha = a + destAlpha * (1 - a);
@@ -172,6 +183,9 @@ export interface CloneParams {
     layerOffsetY: number;
     cloneOffsetX: number;
     cloneOffsetY: number;
+    // Palette lock: painted pixels become hard, fully opaque palette colors.
+    paletteLock: boolean;
+    paletteSnap: PaletteSnap | null;
 }
 
 // Copies pixels from `source` (a snapshot of the layer) into `target`, offset
@@ -223,6 +237,17 @@ export function cloneStamp(
                 continue;
             }
             const destPos = (layerX + layerY * width) * 4;
+            if (params.paletteLock && params.paletteSnap) {
+                const snap = params.paletteSnap;
+                const snapped = snap.palette[
+                    snap.index(sourceData[sourcePos], sourceData[sourcePos + 1], sourceData[sourcePos + 2])
+                ];
+                targetData[destPos] = snapped.r;
+                targetData[destPos + 1] = snapped.g;
+                targetData[destPos + 2] = snapped.b;
+                targetData[destPos + 3] = 255;
+                continue;
+            }
             const destAlpha = targetData[destPos + 3] / 255;
             const outAlpha = sourceAlpha + destAlpha * (1 - sourceAlpha);
             if (outAlpha <= 0) {
@@ -251,6 +276,9 @@ export interface HealParams {
     selection: Selection | null;
     layerOffsetX: number;
     layerOffsetY: number;
+    // Palette lock: painted pixels become hard, fully opaque palette colors.
+    paletteLock: boolean;
+    paletteSnap: PaletteSnap | null;
 }
 
 // Spot healing: averages the ring of pixels surrounding the brush (from a
@@ -335,6 +363,15 @@ export function healStamp(
                 continue;
             }
             const pos = (layerX + layerY * width) * 4;
+            if (params.paletteLock && params.paletteSnap) {
+                const snap = params.paletteSnap;
+                const snapped = snap.palette[snap.index(Math.round(averageR), Math.round(averageG), Math.round(averageB))];
+                targetData[pos] = snapped.r;
+                targetData[pos + 1] = snapped.g;
+                targetData[pos + 2] = snapped.b;
+                targetData[pos + 3] = 255;
+                continue;
+            }
             const destAlpha = targetData[pos + 3] / 255;
             const outAlpha = alpha + destAlpha * (1 - alpha);
             if (outAlpha <= 0) {
@@ -364,6 +401,9 @@ export interface KnifeParams {
     // Unit drag direction in document space.
     dirX: number;
     dirY: number;
+    // Palette lock: painted pixels become hard, fully opaque palette colors.
+    paletteLock: boolean;
+    paletteSnap: PaletteSnap | null;
 }
 
 // Palette knife: samples paint slightly behind the cursor (opposite the drag
@@ -437,14 +477,23 @@ export function knifeStamp(target: ImageData, centerX: number, centerY: number, 
                 continue;
             }
             const pos = (layerX + layerY * width) * 4;
+            const srcR = sumR / samples;
+            const srcG = sumG / samples;
+            const srcB = sumB / samples;
+            if (params.paletteLock && params.paletteSnap) {
+                const snap = params.paletteSnap;
+                const snapped = snap.palette[snap.index(Math.round(srcR), Math.round(srcG), Math.round(srcB))];
+                data[pos] = snapped.r;
+                data[pos + 1] = snapped.g;
+                data[pos + 2] = snapped.b;
+                data[pos + 3] = 255;
+                continue;
+            }
             const destAlpha = data[pos + 3] / 255;
             const outAlpha = sourceAlpha + destAlpha * (1 - sourceAlpha);
             if (outAlpha <= 0) {
                 continue;
             }
-            const srcR = sumR / samples;
-            const srcG = sumG / samples;
-            const srcB = sumB / samples;
             data[pos] = Math.round((srcR * sourceAlpha + data[pos] * destAlpha * (1 - sourceAlpha)) / outAlpha);
             data[pos + 1] = Math.round((srcG * sourceAlpha + data[pos + 1] * destAlpha * (1 - sourceAlpha)) / outAlpha);
             data[pos + 2] = Math.round((srcB * sourceAlpha + data[pos + 2] * destAlpha * (1 - sourceAlpha)) / outAlpha);

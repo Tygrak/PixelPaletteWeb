@@ -154,6 +154,14 @@ export function installShortcuts(hooks: ShortcutHooks): void {
             return;
         }
         if (event.key === 'Delete' || event.key === 'Backspace') {
+            // With a layer row focused (last click was on the Layers list),
+            // Delete removes the layer instead of the selection.
+            if (store.layerFocus && store.layers.length > 1) {
+                event.preventDefault();
+                commitFloating();
+                store.deleteLayer();
+                return;
+            }
             if (isFloating()) {
                 commitFloating();
             }

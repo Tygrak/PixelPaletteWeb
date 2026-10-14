@@ -1,7 +1,7 @@
 // Drawing modifiers: the symmetry guide (mirror / rotational) plus the math
 // that mirrors paint strokes and fills around it.
 
-import { clamp, getMinDistance, RGB } from '../shared/color';
+import { clamp, getMinDistance, getMinDistanceIndex, RGB } from '../shared/color';
 import { createEmptyImage } from '../shared/image';
 
 export type SymmetryMode = 'mirror' | 'rotational';
@@ -39,6 +39,31 @@ export function snapToPalette(color: RGB, palette: RGB[]): RGB {
         return color;
     }
     return getMinDistance(color, palette);
+}
+
+// Nearest-palette lookup for palette lock: RGB is quantized to 5 bits per
+// channel and the nearest palette index is cached per bucket, so snapping
+// every painted pixel stays cheap even with a large palette.
+export interface PaletteSnap {
+    palette: RGB[];
+    index(r: number, g: number, b: number): number;
+}
+
+export function createPaletteSnap(palette: RGB[]): PaletteSnap {
+    const cache = new Int16Array(1 << 15).fill(-1);
+    return {
+        palette,
+        index(r: number, g: number, b: number): number {
+            const key = ((r >> 3) << 10) | ((g >> 3) << 5) | (b >> 3);
+            const cached = cache[key];
+            if (cached >= 0) {
+                return cached;
+            }
+            const nearest = getMinDistanceIndex({ r, g, b }, palette);
+            cache[key] = nearest;
+            return nearest;
+        },
+    };
 }
 
 // Snaps every pixel's RGB to the nearest palette color. Unlike the dither

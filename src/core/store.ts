@@ -549,6 +549,15 @@ export class Store {
         this.emit();
     }
 
+    // True while the last click was on a layer row (mini or full Layers
+    // panel). Delete then removes that layer instead of the selection; any
+    // click elsewhere clears it.
+    layerFocus = false;
+
+    setLayerFocus(focused: boolean): void {
+        this.layerFocus = focused;
+    }
+
     setLayerVisible(index: number, visible: boolean): void {
         const layer = this.layers[index];
         if (!layer) {

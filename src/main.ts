@@ -471,9 +471,14 @@ function bakeActiveLayerOffset(): void {
     store.notify();
 }
 
+// Raw pen/touch pressure (0..1). A reported 0 is a real value (tablets often
+// report it for the first events of a stroke) and is passed through unchanged:
+// the paint layer waits for a nonzero reading before laying down the first
+// stamp rather than treating 0 as full pressure (which paints an oversized blob
+// at the stroke start). Mouse and other pointers paint at full pressure.
 function pointerPressure(event: PointerEvent): number {
-    if ((event.pointerType === 'pen' || event.pointerType === 'touch') && event.pressure > 0) {
-        return clamp(event.pressure, 0.02, 1);
+    if (event.pointerType === 'pen' || event.pointerType === 'touch') {
+        return clamp(event.pressure, 0, 1);
     }
     return 1;
 }
@@ -564,7 +569,8 @@ canvas.addEventListener('pointerdown', (event) => {
             if (!image) {
                 break;
             }
-            startBrushStroke(tool === 'eraser' ? 'eraser' : 'brush', image, point.x, point.y, pointerPressure(event));
+            const pressure = pointerPressure(event);
+            startBrushStroke(tool === 'eraser' ? 'eraser' : 'brush', image, point.x, point.y, pressure);
             break;
         }
         case 'clone': {
@@ -614,7 +620,9 @@ canvas.addEventListener('pointerdown', (event) => {
             }
             const fill = floodFill(image, point.x, point.y, {
                 color: store.paintColor,
-                alpha: store.brushOpacity,
+                // Palette lock fills opaquely so no blending can leave
+                // off-palette or semi-transparent pixels.
+                alpha: store.paletteLock.enabled && store.palette.length > 0 ? 1 : store.brushOpacity,
                 tolerance: store.fillTolerance,
                 selection: store.selection,
                 offsetX: layer.offsetX,
@@ -726,7 +734,8 @@ canvas.addEventListener('pointermove', (event) => {
     }
 
     if (hasActiveStroke()) {
-        continueStroke(point.x, point.y, pointerPressure(event));
+        const pressure = pointerPressure(event);
+        continueStroke(point.x, point.y, pressure);
         return;
     }
 
@@ -911,6 +920,21 @@ window.addEventListener('paste', (event) => {
         }
     });
 });
+
+// --- Layer focus (Delete removes the focused layer) ---
+
+// Clicking a layer row focuses it; any click outside the layer lists clears
+// that focus, so Delete falls back to deleting the selection.
+window.addEventListener(
+    'pointerdown',
+    (event) => {
+        const target = event.target instanceof Element ? event.target : null;
+        if (!target?.closest('.mini-layer-list, .layer-list')) {
+            store.setLayerFocus(false);
+        }
+    },
+    true,
+);
 
 // --- Keyboard shortcuts ---
 

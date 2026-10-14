@@ -205,7 +205,11 @@ by `frameId:contentRevision`, so it is not recomposited on every stroke.
 
 Pointer events (`pointerdown` / `pointermove` / `pointerup`) drive all canvas
 interaction. While `store.playing` is true, input is ignored. `pointerPressure()`
-returns 0.02–1 for pen/touch and 1 otherwise.
+returns the raw 0–1 reading for pen/touch and 1 otherwise. While the first
+events of a stroke report 0 pressure (tablets often do as the pen ramps up) the
+first stamp is deferred; it paints as soon as a move reports a real reading, or
+at full pressure if the pointer lifts without one, so taps still register as
+dots.
 
 Painting tools (brush, eraser, clone, heal, knife) share a stroke session in
 `editor/paint.ts`:
@@ -250,9 +254,13 @@ into transform mode, where dragging on the canvas moves or rotates it directly
 (`main.ts` handles the drag).
 
 The **Palette Lock** modifier (`store.paletteLock`) keeps paint on the palette:
-while `enabled`, paint operations use `store.paintColor`, which is
-`snapToPalette(foreground, palette)` (brush, paint bucket, text and its on-canvas
-preview). With `applyOnPaletteChange`, editing a palette entry through
+while `enabled`, paint operations use `store.paintColor`
+(`snapToPalette(foreground, palette)`) and paint hard, fully opaque pixels, so
+soft brush edges cannot blend into off-palette or semi-transparent colors. The
+sampled tools (clone, heal, knife) snap their colors through
+`createPaletteSnap()` and also paint opaquely, and the paint bucket fills at full
+opacity. Text uses `store.paintColor` for its color (its antialiased edge pixels
+are not snapped). With `applyOnPaletteChange`, editing a palette entry through
 `store.setPaletteColor()` (palette panel, options-bar strip) recolors every
 matching pixel of the active layer to the new color; the edit is recorded in
 history before the palette changes, so undo/redo revert palette and pixels
@@ -338,9 +346,11 @@ input while typing in a field, routes `Ctrl` combinations (undo/redo/save/
 copy/paste/new layer/duplicate/merge), and maps single keys to tools via
 `toolForShortcut()`. Space is context-sensitive: it pans (drag) normally, or
 toggles animation playback in animation mode. While the Text tool is editing, it
-handles Escape/Enter/Backspace/characters instead. Actions that belong to the
-app wiring (saving, tool selection, timeline, space-pan state) are injected as
-hooks by `main.ts`.
+handles Escape/Enter/Backspace/characters instead. `Delete`/`Backspace` clears
+the selection, or deletes the focused layer when the last click was on a layer
+row (`store.layerFocus`, set by the mini/full Layers lists and cleared by clicks
+elsewhere in `main.ts`). Actions that belong to the app wiring (saving, tool
+selection, timeline, space-pan state) are injected as hooks by `main.ts`.
 
 ## Build & deployment
 
