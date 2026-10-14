@@ -23,6 +23,7 @@
 
 import { rgb, RGB } from '../shared/color';
 import { downloadBlob, imageDataFromBlob, imageDataToPngDataUrl } from '../shared/files';
+import { brushById } from './brushLibrary';
 import { compositeLayers, createLayer, Layer } from './layers';
 import {
     MAX_SYMMETRY_SEGMENTS,
@@ -68,6 +69,10 @@ export interface ProjectManifest {
     palette: RGB[];
     initialPalette: RGB[];
     foreground: RGB;
+    // Selected brush and size (optional: files written before they were stored
+    // lack them and keep the current session's brush).
+    brushId?: string;
+    brushSize?: number;
     // Drawing modifiers (optional: files written before they were stored lack
     // them and fall back to the current session's state).
     symmetry?: SymmetryState;
@@ -143,6 +148,19 @@ function sanitizePaletteLock(value: unknown): PaletteLockState | null {
     };
 }
 
+// A brush id that still exists in the library (custom brushes may have been
+// deleted since the file was written; the store falls back to the default).
+function sanitizeBrushId(value: unknown): string | null {
+    return typeof value === 'string' && brushById(value).id === value ? value : null;
+}
+
+function sanitizeBrushSize(value: unknown): number | null {
+    if (typeof value !== 'number' || !Number.isFinite(value)) {
+        return null;
+    }
+    return Math.max(1, Math.min(500, Math.round(value)));
+}
+
 function dataUrlToBytes(url: string): Uint8Array<ArrayBuffer> {
     const comma = url.indexOf(',');
     const binary = atob(comma >= 0 ? url.slice(comma + 1) : url);
@@ -193,6 +211,8 @@ export function encodeProject(store: Store): Blob {
         palette: store.palette.map((color) => ({ ...color })),
         initialPalette: store.initialPalette.map((color) => ({ ...color })),
         foreground: { ...store.foreground },
+        brushId: store.brushId,
+        brushSize: store.brushSize,
         // The guide transform mode is transient editing state, not saved.
         symmetry: { ...store.symmetry, transformMode: false },
         paletteLock: { ...store.paletteLock },
@@ -316,6 +336,8 @@ async function decodeBinaryProject(bytes: Uint8Array<ArrayBuffer>): Promise<Docu
         initialPalette,
         initial,
         foreground,
+        brushId: sanitizeBrushId(manifest.brushId) ?? undefined,
+        brushSize: sanitizeBrushSize(manifest.brushSize) ?? undefined,
         symmetry: symmetry ?? undefined,
         paletteLock: sanitizePaletteLock(manifest.paletteLock) ?? undefined,
     };

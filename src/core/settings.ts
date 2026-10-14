@@ -19,7 +19,6 @@ export interface Settings {
     paletteSize: number; // colors generated from an imported image
     saveFormat: SaveFormat;
     saveColumns: number; // 0 = auto
-    saveFileName: string; // base name without extension
     autoSaveRecent: boolean; // keep recent documents in localStorage (crash recovery)
     autoSaveCount: number; // how many recent documents to keep
 }
@@ -39,7 +38,6 @@ export const DEFAULT_SETTINGS: Settings = {
     paletteSize: 8,
     saveFormat: 'current',
     saveColumns: 0,
-    saveFileName: 'image',
     autoSaveRecent: true,
     autoSaveCount: 6,
 };

@@ -1,6 +1,7 @@
 import { store } from '../appStore';
 import {
     bakeFloating,
+    Bounds,
     Box,
     BoxHit,
     boxCorners,
@@ -42,6 +43,9 @@ let cachedBounds: ReturnType<typeof selectionBounds> = null;
 let floatingMask: Selection | null = null;
 let floatingOriginCx = 0;
 let floatingOriginCy = 0;
+// True when the floating holds the whole active layer (Move tool with no
+// selection); committing then leaves no selection behind.
+let floatingWholeLayer = false;
 
 export function isFloating(): boolean {
     return floating !== null;
@@ -72,6 +76,57 @@ export function selectionBoundsCached(): ReturnType<typeof selectionBounds> {
     return cachedBounds;
 }
 
+// Bounding box of a layer's non-transparent pixels, in layer coordinates
+// (null when the layer is completely transparent).
+function alphaBounds(image: ImageData): Bounds | null {
+    const { width, height, data } = image;
+    let minX = width;
+    let minY = height;
+    let maxX = -1;
+    let maxY = -1;
+    for (let y = 0; y < height; y++) {
+        const rowStart = y * width * 4;
+        let rowMinX = -1;
+        let rowMaxX = -1;
+        for (let x = 0; x < width; x++) {
+            if (data[rowStart + x * 4 + 3] !== 0) {
+                if (rowMinX < 0) {
+                    rowMinX = x;
+                }
+                rowMaxX = x;
+            }
+        }
+        if (rowMinX < 0) {
+            continue;
+        }
+        if (rowMinX < minX) minX = rowMinX;
+        if (rowMaxX > maxX) maxX = rowMaxX;
+        if (y < minY) minY = y;
+        maxY = y;
+    }
+    if (maxX < 0) {
+        return null;
+    }
+    return { x0: minX, y0: minY, x1: maxX + 1, y1: maxY + 1 };
+}
+
+// The content bounds scan is O(w*h) and currentBox() runs on every overlay
+// redraw and hover, so the result is cached per image and store revision
+// (revisions only increase, so a hit means the pixels did not change).
+let cachedContentImage: ImageData | null = null;
+let cachedContentRevision = -1;
+let cachedContentBounds: Bounds | null = null;
+
+function layerContentBounds(image: ImageData): Bounds | null {
+    if (cachedContentImage === image && cachedContentRevision === store.revision) {
+        return cachedContentBounds;
+    }
+    cachedContentImage = image;
+    cachedContentRevision = store.revision;
+    cachedContentBounds = alphaBounds(image);
+    return cachedContentBounds;
+}
+
 export function currentBox(): Box | null {
     if (floating) {
         return boxFromFloating(floating);
@@ -80,6 +135,21 @@ export function currentBox(): Box | null {
         const bounds = selectionBoundsCached();
         if (bounds) {
             return boxFromBounds(bounds);
+        }
+        // Without a selection the box frames the active layer's visible
+        // content, so its handles can scale/rotate just the drawn pixels.
+        const layer = store.activeLayer;
+        if (layer && layer.image.width > 0 && layer.image.height > 0) {
+            const content = layerContentBounds(layer.image);
+            if (content) {
+                return {
+                    cx: layer.offsetX + (content.x0 + content.x1) / 2,
+                    cy: layer.offsetY + (content.y0 + content.y1) / 2,
+                    w: content.x1 - content.x0,
+                    h: content.y1 - content.y0,
+                    rotation: 0,
+                };
+            }
         }
     }
     if (store.activeTool === 'resize' && store.width > 0) {
@@ -111,6 +181,49 @@ function liftToFloating(copy: boolean): boolean {
     store.layers[store.activeIndex] = { ...layer, image: result.cleared };
     floating = result.floating;
     floatingMask = store.selection;
+    floatingOriginCx = result.floating.cx;
+    floatingOriginCy = result.floating.cy;
+    store.notify();
+    return true;
+}
+
+// Lifts the whole active layer's visible content into a floating (Move tool
+// without a selection), so the box handles can scale/rotate it. With `copy`
+// the layer keeps its pixels.
+function liftWholeLayerToFloating(copy: boolean): boolean {
+    const layer = store.activeLayer;
+    if (!layer || store.width <= 0 || store.height <= 0) {
+        return false;
+    }
+    const content = layerContentBounds(layer.image);
+    if (!content) {
+        return false;
+    }
+    const x0 = Math.max(0, layer.offsetX + content.x0);
+    const y0 = Math.max(0, layer.offsetY + content.y0);
+    const x1 = Math.min(store.width, layer.offsetX + content.x1);
+    const y1 = Math.min(store.height, layer.offsetY + content.y1);
+    if (x1 <= x0 || y1 <= y0) {
+        return false;
+    }
+    const mask = rectSelection(store.width, store.height, x0, y0, x1 - 1, y1 - 1);
+    const result = liftSelection(
+        layer.image,
+        mask,
+        layer.offsetX,
+        layer.offsetY,
+        store.width,
+        store.height,
+        copy,
+    );
+    if (!result) {
+        return false;
+    }
+    store.pushHistory();
+    store.layers[store.activeIndex] = { ...layer, image: result.cleared };
+    floating = result.floating;
+    floatingMask = null;
+    floatingWholeLayer = true;
     floatingOriginCx = result.floating.cx;
     floatingOriginCy = result.floating.cy;
     store.notify();
@@ -253,11 +366,14 @@ export function commitFloating(): void {
         compositeOverLayer(target, baked, layer.offsetX, layer.offsetY);
         store.layers[store.activeIndex] = { ...layer, image: target };
     }
-    const transformed = floatingMask
-        ? transformMask(floatingMask, floatingOriginCx, floatingOriginCy, floating)
-        : selectionForBox(box);
+    const transformed = floatingWholeLayer
+        ? null
+        : floatingMask
+          ? transformMask(floatingMask, floatingOriginCx, floatingOriginCy, floating)
+          : selectionForBox(box);
     floating = null;
     floatingMask = null;
+    floatingWholeLayer = false;
     store.selection = transformed;
     store.notify();
 }
@@ -268,15 +384,16 @@ export function cancelFloating(): void {
     }
     floating = null;
     floatingMask = null;
+    floatingWholeLayer = false;
     store.clearSelection();
     store.undo();
 }
 
 // Starts a transform drag on the box handle that was hit. Lifts the selection
-// into a floating first when nothing is floating yet (`copy` keeps the
+// (or, without one, the whole layer) into a floating first (`copy` keeps the
 // original pixels, for Alt-drag).
 export function startTransformDrag(hit: Exclude<BoxHit, null>, pointX: number, pointY: number, copy: boolean): void {
-    if (!floating && !liftToFloating(copy)) {
+    if (!floating && !(store.selection ? liftToFloating(copy) : liftWholeLayerToFloating(copy))) {
         return;
     }
     const active = currentBox()!;

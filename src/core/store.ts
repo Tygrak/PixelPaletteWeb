@@ -55,6 +55,9 @@ export interface DocumentData {
     initialPalette: RGB[];
     initial: ImageData | null;
     foreground?: RGB;
+    // Tool state that travels with the document (project files).
+    brushId?: string;
+    brushSize?: number;
     // Drawing modifiers travel with the document (project files).
     symmetry?: SymmetryState;
     paletteLock?: PaletteLockState;
@@ -69,7 +72,7 @@ export interface DamageRect {
     height: number;
 }
 
-const HISTORY_LIMIT = 15;
+const HISTORY_LIMIT = 30;
 
 // Central editor state: frames, history, tools and selection.
 export class Store {
@@ -92,7 +95,7 @@ export class Store {
 
     activeTool: ToolId = 'hand';
     foreground: RGB = rgb(0, 0, 0);
-    brushSize = 24;
+    brushSize = 10;
     brushOpacity = 1;
     brushId = DEFAULT_BRUSH_ID;
     knifeSmear = 0.6;
@@ -516,6 +519,12 @@ export class Store {
         this.initial = data.initial;
         if (data.foreground) {
             this.foreground = { ...data.foreground };
+        }
+        if (data.brushId !== undefined) {
+            this.brushId = data.brushId;
+        }
+        if (data.brushSize !== undefined) {
+            this.brushSize = data.brushSize;
         }
         this.selection = null;
         // Modifier state saved with the document; old files without it keep the

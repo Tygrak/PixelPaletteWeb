@@ -146,7 +146,7 @@ is no offset/opacity.
 
 ### History
 
-Undo/redo is **per frame**, capped at `HISTORY_LIMIT = 15`. `pushHistory()`
+Undo/redo is **per frame**, capped at `HISTORY_LIMIT = 30`. `pushHistory()`
 stores a `Snapshot` (`layers`, `activeIndex`, `width`, `height`, `palette`).
 `undo()` moves the current state to the redo stack and restores the snapshot.
 The palette is part of the snapshot so palette edits that recolored the image
@@ -243,10 +243,12 @@ pressure math live in `core/brushes.ts`:
 
 Other tools: the **Text** tool is an interactive session in `editor/textTool.ts`
 (in-progress string + caret, committed on Enter); `core/text.ts` rasterizes it
-and the result is applied through `ctx.applyImage`. The **Move** tool either
-offsets the active layer or lifts the selection into a floating transform (see
-below); the **Resize Image** tool resizes the whole document via
-`store.resizeDocument`/`resizeCanvas`.
+and the result is applied through `ctx.applyImage`. The **Move** tool shows a
+transform box around the active layer's visible content (or the selection) at
+all times: dragging inside moves the layer/selection, the handles scale/rotate
+— with no selection the framed content is lifted into the floating transform
+when a handle is grabbed — and clicking outside commits. The **Resize Image**
+tool resizes the whole document via `store.resizeDocument`/`resizeCanvas`.
 
 ### Modifiers (`core/modifiers.ts`, `ui/modifiersPanel.ts`)
 
@@ -293,8 +295,9 @@ The in-progress drag (marquee/lasso outline, mode capture) lives in
 `core/floating.ts` holds the floating bitmap + transform box math
 (`liftSelection`, `computeScale`, `bakeFloating`); `editor/floatingSelection.ts`
 tracks the live session (current floating, drag state, commit/cancel). The Move
-tool drags handles to translate/scale/rotate, `Enter` commits and `Escape`
-cancels.
+tool's box frames the selection when there is one, otherwise the active layer's
+visible content (its alpha bounding box); grabbing a handle lifts that content
+into the floating transform. `Enter` commits and `Escape` cancels.
 
 ## Animation (`ui/timeline.ts`, `core/store.ts`)
 
@@ -331,11 +334,12 @@ The toolbar **Save File** button and `Ctrl + S` open the shared save dialog:
   automatic auto-saving is disabled in Settings,
 - **Current frame**, **Sprite sheet (grid)** (configurable columns), or
   **Separate images** (`name_001.png`, …).
-- The file name is sanitized and remembered, as are the format and columns
-  (`settings.saveFormat` / `saveColumns` / `saveFileName`); the label next to
-  the name shows the extension the selected format produces (hidden for
-  browser storage). Every manual save also refreshes the document's
-  recent-files auto-save.
+- The file name is pre-filled with the document's own name — new documents
+  start as "untitled" and only gain a name when saved with one — while the
+  format and columns are remembered (`settings.saveFormat` /
+  `saveColumns`); the label next to the name shows the extension the selected
+  format produces (hidden for browser storage). Every manual save also
+  refreshes the document's recent-files auto-save.
 
 `shared/files.ts` handles opening local images, saving PNGs via a download
 link, and text import/export for palettes.
@@ -346,15 +350,16 @@ A project is a small binary container holding the whole session: every frame
 and, per layer, its name, visibility, opacity, offsets and pixels. Layout:
 `"PPAL"` magic + version + manifest length, then a JSON manifest (dimensions,
 frames/layers with an `imageIndex` each, image byte lengths, palette,
-foreground color and the drawing modifier state — the symmetry guide and
-palette lock), then the PNG blobs back to back. PNGs are stored raw instead of
-as base64 data URLs inside JSON (which inflated them by 33%), and
-pixel-identical images (e.g. duplicated layers) share one blob. The original
-image the document was opened from is deliberately not stored — a second full
-copy roughly doubled the file size — so on load Restore targets the saved
-state, which is recomputed by compositing the loaded frame. The guide's
-transform mode is transient and never restored; files written before modifiers
-were stored keep the session's current settings (and just recenter the guide).
+foreground color, the selected brush and size, and the drawing modifier state
+— the symmetry guide and palette lock), then the PNG blobs back to back. PNGs
+are stored raw instead of as base64 data URLs inside JSON (which inflated them
+by 33%), and pixel-identical images (e.g. duplicated layers) share one blob.
+The original image the document was opened from is deliberately not stored — a
+second full copy roughly doubled the file size — so on load Restore targets
+the saved state, which is recomputed by compositing the loaded frame. The
+guide's transform mode is transient and never restored; files written before
+these fields existed keep the session's current brush/modifier settings (and
+just recenter the guide).
 
 Toolbar **Open File** (and the start screen's Open button) opens a dialog that
 offers four ways in: choosing a file from disk, picking one of the recent
@@ -376,8 +381,9 @@ holding one project blob per entry) so work survives closing the site:
   changed, on `visibilitychange`/`pagehide` (best effort — IndexedDB writes
   are asynchronous), and on every manual save;
 - each document owns one entry: documents created in the app (New File, opened
-  or pasted images) are pinned to a fresh id (creation timestamp plus a random
-  suffix) so they never overwrite one another, projects reopened from disk
+  or pasted images) start as "untitled" — they only gain a name when saved
+  with one — and are pinned to a fresh id (creation timestamp plus a random
+  suffix) so they never overwrite one another; projects reopened from disk
   continue the existing entry with the same name, and recent tiles continue
   their own entry; the list is trimmed to `settings.autoSaveCount`;
 - safeguards: a project over `MAX_RECENT_BYTES` (40 MB) is never auto-saved,
@@ -402,8 +408,7 @@ the count (1–10), and Settings has a Clear button for the list.
 Settings are saved to `localStorage` and read at startup. Current fields:
 `canvasWidth`, `canvasHeight`, `backgroundColor`, `blankNewImage`,
 `animationMode`, `onionSkin`, `onionOpacity`, `canvasBackdrop`, `minimap`,
-`paletteSize`, `saveFormat`, `saveColumns`, `saveFileName`, `autoSaveRecent`,
-`autoSaveCount`.
+`paletteSize`, `saveFormat`, `saveColumns`, `autoSaveRecent`, `autoSaveCount`.
 
 `paletteSize` is the number of colors generated from an imported image
 (median cut). If the image contains fewer colors, the generated palette is
@@ -433,7 +438,7 @@ once).
 
 - Processing panels act on the **active layer**; the **Resize Image** tool acts
   on the whole document (all layers).
-- Undo history is capped at 15 steps and is tracked per animation frame.
+- Undo history is capped at 30 steps and is tracked per animation frame.
 - `Ctrl + N` (new layer) can be captured by the browser in some cases;
   the Layers panel's button always works.
 - Layers may differ in size/offset from the document; compositing clips them to

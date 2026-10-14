@@ -182,7 +182,7 @@ export const BRUSHES: Brush[] = [
         pixel: false,
         pressure: { sizeMin: 0.35, sizeCurve: 1, alphaMin: 0.25, alphaCurve: 1 },
         spacing: 0.08,
-        texture: tex('chalk', 3, 0.6, 0.5),
+        texture: tex('chalk', 3, 0.2, 0.8),
         lobes: 1,
         lobeDepth: 0,
         rotationJitter: 0,

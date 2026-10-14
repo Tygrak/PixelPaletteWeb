@@ -7,7 +7,7 @@
 import { createDialog, h } from '../shared/dom';
 import { saveImageFile } from '../shared/files';
 import { downloadProjectFile, encodeProject, PROJECT_EXTENSION } from '../core/project';
-import { autoSaveRecent } from '../core/recentFiles';
+import { autoSaveRecent, documentName } from '../core/recentFiles';
 import type { SaveFormat } from '../core/settings';
 import type { Store } from '../core/store';
 
@@ -72,9 +72,11 @@ export function openSaveDialog(store: Store): void {
     columnsInput.style.width = '80px';
     columnsInput.title = 'Number of columns used to arrange frames in the sprite sheet.';
 
-    const nameInput = h('input', { type: 'text', value: store.settings.saveFileName });
+    // Pre-filled with the document's own name; new documents start as
+    // "untitled" and only gain a name when saved with one.
+    const nameInput = h('input', { type: 'text', value: documentName() });
     nameInput.style.width = '180px';
-    nameInput.title = 'Base file name used for the exported file(s), without the extension.';
+    nameInput.title = 'Name used for the exported file(s) and the recent-files entry, without the extension.';
 
     // Shows the extension the chosen format will actually produce.
     const extensionLabel = h('span', { class: 'row-label', text: '.png' });
@@ -124,7 +126,6 @@ export function openSaveDialog(store: Store): void {
             store.updateSettings({
                 saveFormat: format,
                 saveColumns: Math.max(1, parseInt(columnsInput.value, 10) || 1),
-                saveFileName: name,
             });
             dialog.close();
             if (format === 'storage') {

@@ -131,9 +131,10 @@ function openDocument(image: ImageData, refreshPalette = false): void {
         generateAutoPalette(image);
     }
     store.openImage(image);
-    // Opened/pasted images are new documents: a fresh recent-files session so
-    // they never overwrite another document's auto-save.
-    beginNewSession(store.settings.saveFileName);
+    // Opened/pasted images are new documents: a fresh recent-files session
+    // (default name; it gains one when saved) so they never overwrite another
+    // document's auto-save.
+    beginNewSession();
 }
 
 const BASE_COLORS: RGB[] = [
@@ -159,8 +160,8 @@ function newDocument(width?: number, height?: number): void {
     // document's initial palette (the Restore target).
     store.palette = BASE_COLORS.map((color) => ({ ...color }));
     store.newDocument(w, h, background);
-    // New documents get a fresh recent-files session (see openDocument).
-    beginNewSession(store.settings.saveFileName);
+    // New documents start with the default name (see openDocument).
+    beginNewSession();
 }
 
 // Loads a project (a .pixelpalette file or a recent-files blob) into the
@@ -535,8 +536,9 @@ function beginPan(event: PointerEvent): void {
 }
 
 function beginMoveInteraction(event: PointerEvent, pointX: number, pointY: number): void {
-    const box = currentBox();
-    if (!box) {
+    // Plain layer drag: offsets the active layer (with a cheap preview) and
+    // bakes the offset when the drag ends.
+    const startLayerDrag = (): void => {
         const layer = store.activeLayer;
         if (!layer) {
             return;
@@ -549,15 +551,32 @@ function beginMoveInteraction(event: PointerEvent, pointX: number, pointY: numbe
             offsetX: layer.offsetX,
             offsetY: layer.offsetY,
         };
+    };
+
+    const box = currentBox();
+    if (!box) {
+        startLayerDrag();
         return;
     }
     const hit = hitTestBox(box, pointX, pointY, hitTolerance());
+    if (hit === 'inside' && !isFloating() && !store.selection) {
+        // No selection: the box frames the layer, so grabbing its inside moves
+        // the layer as before.
+        startLayerDrag();
+        return;
+    }
     if (hit === null) {
         if (isFloating()) {
             commitFloating();
+        } else if (!store.selection) {
+            // Without a selection, dragging outside the box still moves the
+            // layer (kept from the original behaviour).
+            startLayerDrag();
         }
         return;
     }
+    // Handles (and rotate zones) lift the selection, or the whole layer when
+    // there is no selection, into a floating transform.
     startTransformDrag(hit, pointX, pointY, event.altKey);
 }
 

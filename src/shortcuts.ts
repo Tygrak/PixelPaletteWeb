@@ -197,11 +197,15 @@ export function installShortcuts(hooks: ShortcutHooks): void {
             return;
         }
         if (event.key === '[') {
-            store.setBrushSize(Math.max(1, store.brushSize - 2));
+            // Small brushes step by one so every size up to 10 is reachable;
+            // bigger brushes keep the coarser step of two.
+            const step = store.brushSize <= 10 ? 1 : 2;
+            store.setBrushSize(Math.max(1, store.brushSize - step));
             return;
         }
         if (event.key === ']') {
-            store.setBrushSize(Math.min(500, store.brushSize + 2));
+            const step = store.brushSize <= 10 ? 1 : 2;
+            store.setBrushSize(Math.min(500, store.brushSize + step));
             return;
         }
         const tool = toolForShortcut(event.key);

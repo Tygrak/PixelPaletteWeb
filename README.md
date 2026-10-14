@@ -22,7 +22,9 @@ npm run preview  # serve the production build
   curves, textures) with duplicate and custom brushes under Settings → Brush
   settings.
 - **Selections:** marquee, lasso, magic wand, plus a floating transform for
-  moving/scaling/rotating the selected pixels.
+  moving/scaling/rotating the selected pixels. The Move tool frames the layer's
+  visible content the same way, so it can be scaled and rotated without a
+  selection.
 - **Symmetry modifiers:** mirror or rotational guides that copy brush strokes
   and fills live; the guide can be dragged directly on the image.
 - **Palette lock modifier:** keep drawn pixels on the palette (hard, opaque
@@ -68,7 +70,8 @@ npm run preview  # serve the production build
 | Text                    | `T` |
 | Resize Image            | `R` |
 
-Change the brush size with `[` and `]`.
+Change the brush size with `[` and `]` (step of 1 while the size is 10 or
+less, otherwise 2).
 
 ## Editing shortcuts
 
@@ -95,12 +98,15 @@ Change the brush size with `[` and `]`.
 ## Saving
 
 **Save File** (`Ctrl + S`) offers several formats: a **project file**
-(`.pixelpalette`) that keeps every layer and frame, **browser storage** (keeps
-a copy in the recent files without downloading anything), the current frame, a
-sprite sheet grid, or separate PNGs per frame. **Open File** reopens projects
-and images: the dialog can pick a file from your computer, paste an image from
-the clipboard, accept a dragged-and-dropped file, or load one of the recent
-auto-saves it lists. Images can also be dropped anywhere on the start screen.
+(`.pixelpalette`) that keeps every layer and frame (plus the palette, brush
+and modifier settings), **browser storage** (keeps a copy in the recent files
+without downloading anything), the current frame, a sprite sheet grid, or
+separate PNGs per frame. The name field starts from the document's own name —
+new documents are "untitled" until saved with a name.
+**Open File** reopens projects and images: the dialog can pick a file from
+your computer, paste an image from the clipboard, accept a
+dragged-and-dropped file, or load one of the recent auto-saves it lists.
+Images can also be dropped anywhere on the start screen.
 
 Independently of that, the app auto-saves your last few documents into the
 browser's storage every couple of minutes and whenever you save. They are

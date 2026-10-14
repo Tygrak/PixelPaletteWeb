@@ -220,6 +220,12 @@ export function beginSession(name?: string, id?: string): void {
     sizeWarned = false;
 }
 
+// The current document's name: shown in the save dialog and on recent tiles.
+// New documents keep the default until the user saves them with a name.
+export function documentName(): string {
+    return sessionName;
+}
+
 export async function listRecent(): Promise<RecentEntry[]> {
     if (!(await ensureReady())) {
         return [];
