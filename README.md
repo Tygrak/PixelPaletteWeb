@@ -37,6 +37,13 @@ npm run preview  # serve the production build
   min-average-error dithering.
 - **Adjustments:** resize, rotate, flip, HSL shift, blur, and compare.
 - **Effects:** Sobel edge detection with hysteresis and auto thresholds.
+- **Project files:** save the whole session — every layer, frame and the
+  palette — as a `.pixelpalette` file and reopen it later, instead of only
+  exporting flattened images.
+- **Auto-saved recent files:** the last few documents you worked on are kept
+  in the browser automatically (also when you save normally) and shown as
+  tiles on the start screen when no file is open. Configurable and toggleable
+  in Settings; files larger than 40 MB are skipped.
 - Clipboard copy/paste, undo/redo, customizable save name/format, a
   checkerboard / black / white image backdrop, and an optional minimap for
   panning while zoomed in.
@@ -84,6 +91,23 @@ Change the brush size with `[` and `]`.
 | New Layer       | `Ctrl + N`          |
 | Duplicate Layer | `Ctrl + D`          |
 | Merge Down      | `Ctrl + E`          |
+
+## Saving
+
+**Save File** (`Ctrl + S`) offers several formats: a **project file**
+(`.pixelpalette`) that keeps every layer and frame, **browser storage** (keeps
+a copy in the recent files without downloading anything), the current frame, a
+sprite sheet grid, or separate PNGs per frame. **Open File** reopens projects
+and images: the dialog can pick a file from your computer, paste an image from
+the clipboard, accept a dragged-and-dropped file, or load one of the recent
+auto-saves it lists. Images can also be dropped anywhere on the start screen.
+
+Independently of that, the app auto-saves your last few documents into the
+browser's storage every couple of minutes and whenever you save. They are
+shown as tiles on the start screen while no file is open. This can be turned
+off, and the number of kept files changed, under
+**Settings → Auto-save recent files**; documents larger than 40 MB are skipped
+by design.
 
 ## Tablet / pen support
 

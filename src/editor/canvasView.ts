@@ -21,10 +21,9 @@ import { getActiveColorPicker } from '../ui/selectColor';
 export const canvas = h('canvas', { class: 'main-canvas' });
 const overlayCanvas = h('canvas', { class: 'overlay-canvas' });
 const canvasStack = h('div', { class: 'canvas-stack' }, [canvas, overlayCanvas]);
-const canvasPlaceholder = h('div', {
-    class: 'placeholder',
-    text: 'Open, paste or create a new file to begin',
-});
+// Filled by the app wiring with the start screen (quick actions + recent
+// files) while no document is open.
+export const canvasPlaceholder = h('div', { class: 'placeholder' });
 export const canvasArea = h('div', { class: 'canvas-area' }, [canvasStack, canvasPlaceholder]);
 const resizePreview = h('div', { class: 'resize-preview' });
 canvasArea.append(resizePreview);

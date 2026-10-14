@@ -297,8 +297,13 @@ body {
 }
 
 .placeholder {
+    display: flex;
+    width: 100%;
+    height: 100%;
+    padding: 24px;
     color: #d7dedd;
     font-size: 15px;
+    overflow: auto;
 }
 
 .placeholder.hidden {
@@ -1072,4 +1077,113 @@ input[type='checkbox'] {
 
 .sample-preview.visible {
     display: block;
+}
+
+/* --- Start screen (shown while no document is open) --- */
+.start-screen {
+    display: flex;
+    flex-direction: column;
+    align-items: center;
+    gap: 12px;
+    /* Definite width so the recent-tiles grid can lay out its columns. */
+    width: min(760px, 100%);
+    margin: auto;
+    text-align: center;
+}
+
+.start-actions {
+    display: flex;
+    gap: 8px;
+}
+
+.recent-tiles {
+    width: 100%;
+    margin-top: 16px;
+}
+
+.recent-tiles.hidden {
+    display: none;
+}
+
+.recent-tiles-title {
+    margin-bottom: 8px;
+    color: #8f9998;
+    font-size: 12px;
+    letter-spacing: 0.06em;
+    text-transform: uppercase;
+    text-align: left;
+}
+
+.recent-tile-list {
+    display: grid;
+    grid-template-columns: repeat(auto-fill, minmax(140px, 1fr));
+    gap: 10px;
+}
+
+.recent-tile {
+    display: flex;
+    flex-direction: column;
+    align-items: flex-start;
+    gap: 4px;
+    min-width: 0;
+    padding: 8px;
+    background: var(--bg-panel);
+    color: var(--text);
+    border: 2px solid #000;
+    border-radius: 4px;
+    font: inherit;
+    text-align: left;
+    cursor: pointer;
+}
+
+.recent-tile:hover {
+    background: var(--bg-control-hover);
+}
+
+.recent-tile-thumb {
+    width: 100%;
+    height: 84px;
+    object-fit: contain;
+    image-rendering: pixelated;
+    background-color: #3a3d3c;
+    background-image: linear-gradient(45deg, #2a2c2b 25%, transparent 25%),
+        linear-gradient(-45deg, #2a2c2b 25%, transparent 25%),
+        linear-gradient(45deg, transparent 75%, #2a2c2b 75%),
+        linear-gradient(-45deg, transparent 75%, #2a2c2b 75%);
+    background-size: 12px 12px;
+    background-position: 0 0, 0 6px, 6px -6px, -6px 0;
+    border: 2px solid #000;
+    border-radius: 3px;
+}
+
+.recent-tile-thumb.empty {
+    visibility: hidden;
+}
+
+.recent-tile-name {
+    width: 100%;
+    white-space: nowrap;
+    overflow: hidden;
+    text-overflow: ellipsis;
+}
+
+.recent-tile-meta {
+    color: #8f9998;
+    font-size: 12px;
+}
+
+/* --- Drop zone (Open File dialog) --- */
+.drop-zone {
+    margin: 10px 0;
+    padding: 24px 12px;
+    border: 2px dashed var(--border);
+    border-radius: 4px;
+    color: #8f9998;
+    text-align: center;
+}
+
+.drop-zone.dragover {
+    border-color: #ffffff;
+    background: var(--bg-control-hover);
+    color: var(--text);
 }

@@ -28,6 +28,8 @@ src/
   core/              Document model + pixel processing
     store.ts         Central state: frames, layers, history, selection, tools
     settings.ts      Persisted user settings (localStorage)
+    project.ts       Project file format (binary: all frames/layers/palette)
+    recentFiles.ts   Recent-files auto-save in IndexedDB (crash recovery)
     layers.ts        Layer model + source-over compositing
     selection.ts     Marquee / lasso / wand masks + selection overlay
     floating.ts      Floating bitmap + transform box math, lift/bake
@@ -59,7 +61,9 @@ src/
     miniLayers.ts    Compact sidebar layers list
     newFileDialog.ts New file dialog (size / clipboard image)
     timeline.ts      Animation timeline (frames, playback, onion skin)
-    saveDialog.ts    Save/export dialog (current / grid / separate)
+    saveDialog.ts    Save/export dialog (project / current / grid / separate)
+    openFileDialog.ts  Open dialog (disk / recent / clipboard / drag and drop)
+    startScreen.ts   No-document screen: quick actions + recent-file tiles
     settingsPanel.ts Settings (includes the brush library editor)
     brushSettings.ts Brush library editor section
     modifiersPanel.ts  Modifier sections (symmetry, palette lock)
@@ -320,20 +324,86 @@ selection, and Save.
 
 The toolbar **Save File** button and `Ctrl + S` open the shared save dialog:
 
+- **Project file** (`.pixelpalette`) — the app's own format with every layer
+  and frame (see below),
+- **Browser storage (no download)** — keeps a project copy in the recent
+  files without downloading anything; explicit storage saves run even while
+  automatic auto-saving is disabled in Settings,
 - **Current frame**, **Sprite sheet (grid)** (configurable columns), or
   **Separate images** (`name_001.png`, …).
 - The file name is sanitized and remembered, as are the format and columns
-  (`settings.saveFormat` / `saveColumns` / `saveFileName`).
+  (`settings.saveFormat` / `saveColumns` / `saveFileName`); the label next to
+  the name shows the extension the selected format produces (hidden for
+  browser storage). Every manual save also refreshes the document's
+  recent-files auto-save.
 
 `shared/files.ts` handles opening local images, saving PNGs via a download
 link, and text import/export for palettes.
+
+## Projects & recent files (`core/project.ts`, `core/recentFiles.ts`)
+
+A project is a small binary container holding the whole session: every frame
+and, per layer, its name, visibility, opacity, offsets and pixels. Layout:
+`"PPAL"` magic + version + manifest length, then a JSON manifest (dimensions,
+frames/layers with an `imageIndex` each, image byte lengths, palette,
+foreground color and the drawing modifier state — the symmetry guide and
+palette lock), then the PNG blobs back to back. PNGs are stored raw instead of
+as base64 data URLs inside JSON (which inflated them by 33%), and
+pixel-identical images (e.g. duplicated layers) share one blob. The original
+image the document was opened from is deliberately not stored — a second full
+copy roughly doubled the file size — so on load Restore targets the saved
+state, which is recomputed by compositing the loaded frame. The guide's
+transform mode is transient and never restored; files written before modifiers
+were stored keep the session's current settings (and just recenter the guide).
+
+Toolbar **Open File** (and the start screen's Open button) opens a dialog that
+offers four ways in: choosing a file from disk, picking one of the recent
+auto-saves, pasting an image from the clipboard, or dragging a file onto its
+drop zone. `.pixelpalette` files restore the whole document; images open as a
+new document (the palette is derived from them). Dropping an image or project
+file anywhere on the empty start screen opens it directly, and dropping while
+a document is open is ignored (the browser's default file-navigation is always
+prevented). Projects are loaded through `store.openDocumentData()` (fresh
+history; animation mode is enabled automatically for multi-frame projects).
+The same encoder backs the downloads and the recent-files auto-save, so the
+two can never drift apart.
+
+`core/recentFiles.ts` keeps the last few documents in IndexedDB
+(`pixelpalette-recents` database with a small `meta` store and a `data` store
+holding one project blob per entry) so work survives closing the site:
+
+- snapshots run every `AUTOSAVE_INTERVAL_MS` (2 minutes) when the document
+  changed, on `visibilitychange`/`pagehide` (best effort — IndexedDB writes
+  are asynchronous), and on every manual save;
+- each document owns one entry: documents created in the app (New File, opened
+  or pasted images) are pinned to a fresh id (creation timestamp plus a random
+  suffix) so they never overwrite one another, projects reopened from disk
+  continue the existing entry with the same name, and recent tiles continue
+  their own entry; the list is trimmed to `settings.autoSaveCount`;
+- safeguards: a project over `MAX_RECENT_BYTES` (40 MB) is never auto-saved,
+  the kept copies together stay under a 6 x 40 MB budget, and failed writes
+  drop the oldest entries and retry before giving up. The toolbar status line
+  notes when a file is skipped for size.
+
+IndexedDB is used instead of localStorage because project blobs routinely
+exceed the ~5 MB localStorage quota; the 40 MB guard is therefore a policy
+limit rather than a hard wall.
+
+While no document is open, the canvas area shows the start screen
+(`ui/startScreen.ts`): the "Open, paste, drop or create a file to begin" actions
+plus a grid of recent-file tiles (thumbnail, dimensions, size, age) that load
+an entry directly. The same tiles are listed in the Open File dialog
+(`ui/openFileDialog.ts`). Settings → Auto-save recent files toggles the whole
+mechanism (default on, keeping 6 files), Settings → Recent files kept changes
+the count (1–10), and Settings has a Clear button for the list.
 
 ## Settings persistence (`core/settings.ts`)
 
 Settings are saved to `localStorage` and read at startup. Current fields:
 `canvasWidth`, `canvasHeight`, `backgroundColor`, `blankNewImage`,
 `animationMode`, `onionSkin`, `onionOpacity`, `canvasBackdrop`, `minimap`,
-`paletteSize`, `saveFormat`, `saveColumns`, `saveFileName`.
+`paletteSize`, `saveFormat`, `saveColumns`, `saveFileName`, `autoSaveRecent`,
+`autoSaveCount`.
 
 `paletteSize` is the number of colors generated from an imported image
 (median cut). If the image contains fewer colors, the generated palette is

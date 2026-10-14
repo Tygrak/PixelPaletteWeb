@@ -1,7 +1,9 @@
 import { colorToHex, hexToColor } from '../shared/color';
 import { AppContext } from '../context';
 import { createDockPanel, DockPanel, h, rowHint } from '../shared/dom';
+import { AUTO_SAVE_MAX, AUTO_SAVE_MIN } from '../core/settings';
 import type { CanvasBackdrop } from '../core/settings';
+import { clearRecent } from '../core/recentFiles';
 import { createBrushSettingsSection } from './brushSettings';
 
 export function openSettingsPanel(ctx: AppContext, onClose?: () => void): DockPanel {
@@ -64,6 +66,41 @@ export function openSettingsPanel(ctx: AppContext, onClose?: () => void): DockPa
         store.updateSettings({ minimap: minimapCheckbox.checked }),
     );
 
+    const autoSaveCheckbox = document.createElement('input');
+    autoSaveCheckbox.type = 'checkbox';
+    autoSaveCheckbox.checked = store.settings.autoSaveRecent;
+    autoSaveCheckbox.addEventListener('change', () =>
+        store.updateSettings({ autoSaveRecent: autoSaveCheckbox.checked }),
+    );
+
+    const autoSaveCountInput = document.createElement('input');
+    autoSaveCountInput.type = 'number';
+    autoSaveCountInput.min = String(AUTO_SAVE_MIN);
+    autoSaveCountInput.max = String(AUTO_SAVE_MAX);
+    autoSaveCountInput.style.width = '70px';
+    autoSaveCountInput.value = String(store.settings.autoSaveCount);
+    autoSaveCountInput.addEventListener('change', () =>
+        store.updateSettings({
+            autoSaveCount: Math.max(
+                AUTO_SAVE_MIN,
+                Math.min(Math.round(Number(autoSaveCountInput.value) || AUTO_SAVE_MIN), AUTO_SAVE_MAX),
+            ),
+        }),
+    );
+
+    const clearRecentButton = h('button', {
+        class: 'btn',
+        text: 'Clear',
+        title: 'Delete every auto-saved recent file from this browser',
+        onclick: () => {
+            void clearRecent().then(() => {
+                panel.status.textContent = 'Recent files cleared';
+                // Refresh the start screen tiles if it is visible.
+                store.emit();
+            });
+        },
+    });
+
     const paletteSizeInput = document.createElement('input');
     paletteSizeInput.type = 'number';
     paletteSizeInput.min = '1';
@@ -111,6 +148,17 @@ export function openSettingsPanel(ctx: AppContext, onClose?: () => void): DockPa
                 minimapCheckbox,
             ),
             rowHint(
+                'Auto-save recent files:',
+                'Every couple of minutes a copy of the open document (all layers, frames and the palette) is kept in this browser, so work can be resumed after closing the site. Files larger than 40 MB are skipped.',
+                autoSaveCheckbox,
+            ),
+            rowHint(
+                'Recent files kept:',
+                'How many auto-saved files to keep (1–10). They are offered at startup and through the "Recent" toolbar button.',
+                autoSaveCountInput,
+                clearRecentButton,
+            ),
+            rowHint(
                 'Animation mode:',
                 'Show the timeline at the bottom to add frames, reorder them and play the animation.',
                 animationCheckbox,
@@ -134,6 +182,11 @@ export function openSettingsPanel(ctx: AppContext, onClose?: () => void): DockPa
         backdropSelect.value = store.settings.canvasBackdrop;
         blankCheckbox.checked = store.settings.blankNewImage;
         minimapCheckbox.checked = store.settings.minimap;
+        autoSaveCheckbox.checked = store.settings.autoSaveRecent;
+        if (document.activeElement !== autoSaveCountInput) {
+            autoSaveCountInput.value = String(store.settings.autoSaveCount);
+        }
+        autoSaveCountInput.disabled = !store.settings.autoSaveRecent;
         pickButton.disabled = store.settings.blankNewImage;
         swatch.style.opacity = store.settings.blankNewImage ? '0.4' : '1';
     };

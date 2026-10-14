@@ -4,6 +4,7 @@ import {
     applyCanvasLayout,
     canvas,
     canvasArea,
+    canvasPlaceholder,
     currentScale,
     hideResizePreview,
     hideSamplePreview,
@@ -25,6 +26,16 @@ import { AppContext } from './context';
 import { h } from './shared/dom';
 import { imageDataFromBlob, loadImageFile, saveImageFile } from './shared/files';
 import { computeScale, cursorForHit, hitTestBox } from './core/floating';
+import { decodeProject, isProjectFileName, projectBaseName } from './core/project';
+import {
+    AUTOSAVE_INTERVAL_MS,
+    autoSaveRecent,
+    beginNewSession,
+    beginSession,
+    readRecent,
+    RecentEntry,
+    removeRecent,
+} from './core/recentFiles';
 import {
     applyTransform,
     cancelFloating,
@@ -65,10 +76,12 @@ import { commitText, initTextTool, isTextEditing, startText } from './editor/tex
 import { TOOLS, ToolId, floodFill } from './core/tools';
 import { createMiniLayers, MiniLayers } from './ui/miniLayers';
 import { openNewFileDialog } from './ui/newFileDialog';
+import { openFileDialog } from './ui/openFileDialog';
 import { createOptionsBar } from './ui/optionsBar';
 import { createPanels } from './ui/panels';
 import { openSaveDialog } from './ui/saveDialog';
 import { getActiveColorPicker, selectColorDialog } from './ui/selectColor';
+import { createStartScreen } from './ui/startScreen';
 import { createTimeline, Timeline } from './ui/timeline';
 import { createToolbar } from './ui/toolbar';
 
@@ -118,6 +131,9 @@ function openDocument(image: ImageData, refreshPalette = false): void {
         generateAutoPalette(image);
     }
     store.openImage(image);
+    // Opened/pasted images are new documents: a fresh recent-files session so
+    // they never overwrite another document's auto-save.
+    beginNewSession(store.settings.saveFileName);
 }
 
 const BASE_COLORS: RGB[] = [
@@ -143,6 +159,106 @@ function newDocument(width?: number, height?: number): void {
     // document's initial palette (the Restore target).
     store.palette = BASE_COLORS.map((color) => ({ ...color }));
     store.newDocument(w, h, background);
+    // New documents get a fresh recent-files session (see openDocument).
+    beginNewSession(store.settings.saveFileName);
+}
+
+// Loads a project (a .pixelpalette file or a recent-files blob) into the
+// store. `recentId` continues an existing auto-save entry when there is one.
+async function loadProject(source: Blob, name: string, recentId?: string): Promise<void> {
+    if (store.working) {
+        return;
+    }
+    commitFloating();
+    store.working = true;
+    store.setStatus('Opening project');
+    let message = '';
+    try {
+        const data = await decodeProject(source);
+        if (!data) {
+            message = 'Could not read the project file';
+            return;
+        }
+        store.openDocumentData(data);
+        beginSession(name, recentId);
+        // A project with several frames is an animation; show the timeline.
+        if (store.frameCount > 1 && !store.settings.animationMode) {
+            store.updateSettings({ animationMode: true });
+        }
+    } finally {
+        store.working = false;
+        store.setStatus(message);
+    }
+}
+
+// Restores a document kept by the recent-files auto-save.
+async function loadRecentFile(entry: RecentEntry): Promise<void> {
+    const blob = await readRecent(entry.id);
+    if (!blob) {
+        // The entry's payload is gone (e.g. cleared by the browser); drop the
+        // dangling list entry.
+        await removeRecent(entry.id);
+        store.setStatus('Recent file could not be loaded');
+        return;
+    }
+    await loadProject(blob, entry.name, entry.id);
+}
+
+// --- File actions (toolbar + start screen) ---
+
+async function newFileAction(): Promise<void> {
+    if (store.working) {
+        return;
+    }
+    const choice = await openNewFileDialog(store);
+    if (!choice) {
+        return;
+    }
+    if ('image' in choice) {
+        // A new file always resets the palette; when it comes from an image,
+        // derive it from that image like a first paste does.
+        openDocument(choice.image, true);
+        return;
+    }
+    store.updateSettings({ canvasWidth: choice.width, canvasHeight: choice.height });
+    newDocument(choice.width, choice.height);
+}
+
+// Opens a file chosen from disk (Open File dialog or drag and drop): project
+// files restore the whole document, images open as a new document.
+async function openLocalFile(file: File): Promise<void> {
+    if (store.working) {
+        return;
+    }
+    if (isProjectFileName(file.name)) {
+        await loadProject(file, projectBaseName(file.name));
+        return;
+    }
+    const image = await imageDataFromBlob(file);
+    if (image) {
+        openDocument(image, true);
+    } else {
+        store.setStatus('Could not read that file');
+    }
+}
+
+async function openFileAction(): Promise<void> {
+    if (store.working) {
+        return;
+    }
+    const choice = await openFileDialog();
+    if (!choice) {
+        return;
+    }
+    if ('image' in choice) {
+        openDocument(choice.image, true);
+        return;
+    }
+    if ('recent' in choice) {
+        await loadRecentFile(choice.recent);
+        return;
+    }
+    await openLocalFile(choice.file);
 }
 
 function saveDocument(): void {
@@ -235,33 +351,8 @@ function panelChanged(): void {
 const panels = createPanels(ctx, panelChanged);
 
 const toolbar = createToolbar({
-    onNew: async () => {
-        if (store.working) {
-            return;
-        }
-        const choice = await openNewFileDialog(store);
-        if (!choice) {
-            return;
-        }
-        if ('image' in choice) {
-            // A new file always resets the palette; when it comes from an image,
-            // derive it from that image like a first paste does.
-            openDocument(choice.image, true);
-            return;
-        }
-        store.updateSettings({ canvasWidth: choice.width, canvasHeight: choice.height });
-        newDocument(choice.width, choice.height);
-    },
-    onOpen: async () => {
-        if (store.working) {
-            return;
-        }
-        const image = await loadImageFile();
-        if (image) {
-            // Like a clipboard paste, opening an image derives the palette from it.
-            openDocument(image, true);
-        }
-    },
+    onNew: () => void newFileAction(),
+    onOpen: () => void openFileAction(),
     onSave: () => saveDocument(),
     onUndo: () => {
         if (!store.working) {
@@ -289,6 +380,15 @@ const optionsBar = createOptionsBar(ctx);
 
 miniLayers = createMiniLayers(store, () => panels.isOpen('layers'));
 panels.sidebar.append(miniLayers.root);
+
+// Start screen shown while no document is open: quick actions plus tiles for
+// the auto-saved recent files.
+const startScreen = createStartScreen({
+    onNew: () => void newFileAction(),
+    onOpen: () => void openFileAction(),
+    onRecent: (entry) => void loadRecentFile(entry),
+});
+canvasPlaceholder.append(startScreen.root);
 
 // --- App assembly ---
 
@@ -1005,6 +1105,10 @@ function render(): void {
 
     miniLayers?.sync();
     timeline?.sync();
+    // Keep the start screen's recent tiles current while no document is open.
+    if (store.current === null) {
+        startScreen.refresh();
+    }
 }
 
 function prepareFrameChange(): void {
@@ -1021,3 +1125,41 @@ app.append(timeline.root);
 
 store.onChange(render);
 render();
+
+// --- Recent files (auto-saved to IndexedDB) ---
+
+// Periodic snapshot of the working document. visibilitychange/pagehide add
+// best-effort saves around the moment the site is closed or hidden (the
+// periodic one remains the reliable path; IndexedDB writes are asynchronous).
+window.setInterval(() => {
+    void autoSaveRecent(store);
+}, AUTOSAVE_INTERVAL_MS);
+
+document.addEventListener('visibilitychange', () => {
+    if (document.visibilityState === 'hidden') {
+        void autoSaveRecent(store);
+    }
+});
+
+window.addEventListener('pagehide', () => {
+    void autoSaveRecent(store);
+});
+
+// --- Drag and drop (onto the start screen) ---
+
+// Always stop the browser from navigating to a dropped file; with no document
+// open and no dialog in the way, the dropped file is opened instead.
+window.addEventListener('dragover', (event) => {
+    event.preventDefault();
+});
+
+window.addEventListener('drop', (event) => {
+    event.preventDefault();
+    if (store.current !== null || document.querySelector('.overlay')) {
+        return;
+    }
+    const file = event.dataTransfer?.files?.[0];
+    if (file) {
+        void openLocalFile(file);
+    }
+});

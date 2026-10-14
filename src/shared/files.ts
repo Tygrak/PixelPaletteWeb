@@ -1,8 +1,7 @@
 // Client-side file helpers. Everything stays local in the browser.
 
-export function imageDataFromBlob(blob: Blob): Promise<ImageData | null> {
+function decodeImageSource(src: string): Promise<ImageData | null> {
     return new Promise((resolve) => {
-        const url = URL.createObjectURL(blob);
         const image = new Image();
         image.onload = () => {
             const canvas = document.createElement('canvas');
@@ -10,32 +9,48 @@ export function imageDataFromBlob(blob: Blob): Promise<ImageData | null> {
             canvas.height = image.naturalHeight;
             const ctx = canvas.getContext('2d')!;
             ctx.drawImage(image, 0, 0);
-            URL.revokeObjectURL(url);
             resolve(ctx.getImageData(0, 0, canvas.width, canvas.height));
         };
-        image.onerror = () => {
-            URL.revokeObjectURL(url);
-            resolve(null);
-        };
-        image.src = url;
+        image.onerror = () => resolve(null);
+        image.src = src;
+    });
+}
+
+export function imageDataFromBlob(blob: Blob): Promise<ImageData | null> {
+    const url = URL.createObjectURL(blob);
+    return decodeImageSource(url).then((image) => {
+        URL.revokeObjectURL(url);
+        return image;
+    });
+}
+
+// Encodes pixels as a PNG data URL. Synchronous on purpose: the recent-files
+// auto-save also runs while the page is being closed (pagehide), where an
+// asynchronous toBlob callback would not survive.
+export function imageDataToPngDataUrl(image: ImageData): string {
+    const canvas = document.createElement('canvas');
+    canvas.width = image.width;
+    canvas.height = image.height;
+    canvas.getContext('2d')!.putImageData(image, 0, 0);
+    return canvas.toDataURL('image/png');
+}
+
+// Opens the browser's file picker and resolves with the chosen file (or never,
+// when the picker is dismissed without a selection, like loadImageFile).
+export function pickFile(accept: string): Promise<File | null> {
+    return new Promise((resolve) => {
+        const input = document.createElement('input');
+        input.type = 'file';
+        input.accept = accept;
+        input.onchange = () => resolve(input.files?.[0] ?? null);
+        input.click();
     });
 }
 
 export function loadImageFile(): Promise<ImageData | null> {
-    return new Promise((resolve) => {
-        const input = document.createElement('input');
-        input.type = 'file';
-        input.accept = 'image/png,image/jpeg,image/bmp,image/gif,image/webp,image/*';
-        input.onchange = () => {
-            const file = input.files?.[0];
-            if (!file) {
-                resolve(null);
-                return;
-            }
-            void imageDataFromBlob(file).then(resolve);
-        };
-        input.click();
-    });
+    return pickFile('image/png,image/jpeg,image/bmp,image/gif,image/webp,image/*').then((file) =>
+        file ? imageDataFromBlob(file) : null,
+    );
 }
 
 export function saveImageFile(img: ImageData, filename = 'image.png'): void {
@@ -74,7 +89,7 @@ export function saveTextFile(text: string, filename: string): void {
     downloadBlob(new Blob([text], { type: 'text/plain' }), filename);
 }
 
-function downloadBlob(blob: Blob, filename: string): void {
+export function downloadBlob(blob: Blob, filename: string): void {
     const url = URL.createObjectURL(blob);
     const anchor = document.createElement('a');
     anchor.href = url;

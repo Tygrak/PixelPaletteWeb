@@ -1,5 +1,4 @@
 -resize tool dropwdown selecting whether you are scaling, resizing extend color, resizing to emptyness
--make files savable including layers and frames and everything, not just exporting. make ~3 last changed files get saved to local storage every minute or so (if the file isnt huge)
 -make it possible to change the image when changing palette, maybe thru modifier in modifier tab? also maybe make the modifier prevent drawing colors not in palette? name it palette lock?
 -look into text tool more, is it impossible to let user select which font they actually want?
 -make the magic wand tool icon look more like a wand

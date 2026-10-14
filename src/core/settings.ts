@@ -4,7 +4,7 @@
 export type CanvasBackdrop = 'checker' | 'black' | 'white';
 
 // What the Save dialog exports.
-export type SaveFormat = 'current' | 'grid' | 'separate';
+export type SaveFormat = 'project' | 'storage' | 'current' | 'grid' | 'separate';
 
 export interface Settings {
     canvasWidth: number;
@@ -20,6 +20,8 @@ export interface Settings {
     saveFormat: SaveFormat;
     saveColumns: number; // 0 = auto
     saveFileName: string; // base name without extension
+    autoSaveRecent: boolean; // keep recent documents in localStorage (crash recovery)
+    autoSaveCount: number; // how many recent documents to keep
 }
 
 const STORAGE_KEY = 'pixelpalette.settings';
@@ -38,7 +40,13 @@ export const DEFAULT_SETTINGS: Settings = {
     saveFormat: 'current',
     saveColumns: 0,
     saveFileName: 'image',
+    autoSaveRecent: true,
+    autoSaveCount: 6,
 };
+
+// Bounds for settings.autoSaveCount.
+export const AUTO_SAVE_MIN = 1;
+export const AUTO_SAVE_MAX = 10;
 
 export function loadSettings(): Settings {
     try {
