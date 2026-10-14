@@ -1,20 +1,21 @@
 // Save dialog, shared by the toolbar Save button in both normal and animation
 // mode. Saves the whole project (all layers/frames) as a downloaded file or to
-// browser storage, or exports the current frame, a sprite sheet, or separate
-// images, and remembers the last used options. Every manual save also
-// refreshes the recent-files auto-save.
+// browser storage, or exports the current frame, a sprite sheet, separate
+// images, or a looping animated GIF, and remembers the last used options.
+// Every manual save also refreshes the recent-files auto-save.
 
 import { createDialog, h } from '../shared/dom';
-import { saveImageFile } from '../shared/files';
+import { downloadBlob, saveImageFile } from '../shared/files';
+import { exportAnimationGif } from '../core/gifExport';
 import { downloadProjectFile, encodeProject, PROJECT_EXTENSION } from '../core/project';
 import { autoSaveRecent, documentName } from '../core/recentFiles';
 import type { SaveFormat } from '../core/settings';
 import type { Store } from '../core/store';
 
-// Strips a trailing project/png extension and any characters that are unsafe
-// in file names.
+// Strips a trailing project/png/gif extension and any characters that are
+// unsafe in file names.
 function sanitizeName(raw: string): string {
-    const withoutExtension = raw.trim().replace(/\.(png|pixelpalette)$/i, '');
+    const withoutExtension = raw.trim().replace(/\.(png|pixelpalette|gif)$/i, '');
     const cleaned = withoutExtension.replace(/[\\/:*?"<>|]/g, '_').trim();
     return cleaned === '' ? 'image' : cleaned;
 }
@@ -30,9 +31,11 @@ function flashStatus(store: Store, message: string, ms = 4000): void {
     }, ms);
 }
 
-export function openSaveDialog(store: Store): void {
+export function openSaveDialog(store: Store, fps: number): void {
     const frameCount = store.frameCount;
     const multiFrame = frameCount > 1;
+    // Animated GIF export needs the timeline (animation mode) and a sequence.
+    const canGif = store.settings.animationMode && multiFrame;
     const frameW = store.width;
     const frameH = store.height;
 
@@ -43,22 +46,30 @@ export function openSaveDialog(store: Store): void {
     const currentOption = h('option', { value: 'current', text: 'Current frame' });
     const gridOption = h('option', { value: 'grid', text: 'Sprite sheet (grid)' });
     const separateOption = h('option', { value: 'separate', text: 'Separate images' });
-    // Grid/separate only make sense with more than one frame.
+    const gifOption = h('option', { value: 'gif', text: 'Animated GIF' });
+    // Grid/separate/gif only make sense with more than one frame.
     gridOption.disabled = !multiFrame;
     separateOption.disabled = !multiFrame;
+    gifOption.disabled = !canGif;
     const formatSelect = h('select', { class: 'select' }, [
         projectOption,
         storageOption,
         currentOption,
         gridOption,
         separateOption,
+        gifOption,
     ]);
     formatSelect.title =
-        'Project keeps every layer and frame so you can reopen and continue later; browser storage keeps a copy in the recent files without downloading anything; the other formats export flattened PNG image(s).';
+        'Project keeps every layer and frame so you can reopen and continue later; browser storage keeps a copy in the recent files without downloading anything; animated GIF exports the frames at the timeline FPS; the other formats export flattened PNG image(s).';
     const remembered = store.settings.saveFormat;
-    // Project and storage work for any document; grid/separate need several frames.
+    // Project and storage work for any document; the rest need several frames
+    // (and the GIF also needs animation mode).
     formatSelect.value =
-        remembered === 'project' || remembered === 'storage' || multiFrame || remembered === 'current'
+        remembered === 'project' ||
+        remembered === 'storage' ||
+        remembered === 'current' ||
+        (multiFrame && (remembered === 'grid' || remembered === 'separate')) ||
+        (canGif && remembered === 'gif')
             ? remembered
             : 'current';
 
@@ -97,6 +108,8 @@ export function openSaveDialog(store: Store): void {
             hint.textContent = `Keeps a copy in this browser's recent files as "${name}"; no file is downloaded.`;
         } else if (format === 'separate') {
             hint.textContent = `Saves ${frameCount} file(s): ${name}_001.png …`;
+        } else if (format === 'gif') {
+            hint.textContent = `Looping animated GIF, ${frameCount} frames at ${frameW}×${frameH}, ${Math.round(fps)} fps, ${name}.gif`;
         } else {
             const cols = Math.max(1, parseInt(columnsInput.value, 10) || 1);
             hint.textContent =
@@ -110,7 +123,8 @@ export function openSaveDialog(store: Store): void {
         const format = formatSelect.value as SaveFormat;
         columnsRow.style.display = format === 'grid' ? 'flex' : 'none';
         extensionLabel.style.display = format === 'storage' ? 'none' : '';
-        extensionLabel.textContent = format === 'project' ? PROJECT_EXTENSION : '.png';
+        extensionLabel.textContent =
+            format === 'project' ? PROJECT_EXTENSION : format === 'gif' ? '.gif' : '.png';
         updateHint();
     };
     formatSelect.addEventListener('change', updateVisibility);
@@ -153,6 +167,8 @@ export function openSaveDialog(store: Store): void {
                 saveSeparate(store, name);
             } else if (format === 'grid') {
                 saveGrid(store, name, parseInt(columnsInput.value, 10) || 1);
+            } else if (format === 'gif') {
+                saveGif(store, name, fps);
             } else {
                 saveCurrent(store, name);
             }
@@ -232,4 +248,19 @@ function saveSeparate(store: Store, name: string): void {
         const filename = `${name}_${String(i + 1).padStart(3, '0')}.png`;
         window.setTimeout(() => saveImageFile(image, filename), i * 120);
     }
+}
+
+function saveGif(store: Store, name: string, fps: number): void {
+    store.setStatus('Exporting GIF...');
+    // Let the dialog close and the status paint before the (synchronous)
+    // encode runs.
+    window.setTimeout(() => {
+        const blob = exportAnimationGif(store, fps);
+        if (!blob) {
+            store.setStatus('Could not export the animation');
+            return;
+        }
+        downloadBlob(blob, `${name}.gif`);
+        store.setStatus('');
+    }, 50);
 }

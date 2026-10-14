@@ -24,12 +24,14 @@ src/
     color.ts         RGB/HSL/hex/Lab conversions, distances, averages
     image.ts         ImageData helpers, resize/rotate/flip, error metrics
     files.ts         Local file open/save, clipboard blob decode, text import/export
+    gif.ts           Animated GIF encoder (LZW, palette, looping)
     dom.ts           Small DOM helpers, dialog + docked-panel/tabs/accordion builders
   core/              Document model + pixel processing
     store.ts         Central state: frames, layers, history, selection, tools
     settings.ts      Persisted user settings (localStorage)
     project.ts       Project file format (binary: all frames/layers/palette)
     recentFiles.ts   Recent-files auto-save in IndexedDB (crash recovery)
+    gifExport.ts     Animation → shared palette + indexed frames → GIF
     layers.ts        Layer model + source-over compositing
     selection.ts     Marquee / lasso / wand masks + selection overlay
     floating.ts      Floating bitmap + transform box math, lift/bake
@@ -303,7 +305,9 @@ into the floating transform. `Enter` commits and `Escape` cancels.
 
 Enabled by Settings → Animation mode. The timeline lists frame thumbnails (each
 a `frameComposite`), supports click-to-edit, drag-to-reorder, add (duplicate or
-blank) and delete.
+blank) and delete. Clicking a frame also focuses it, so `Delete` removes that
+frame (see Keyboard shortcuts). The save dialog's **Animated GIF** format
+exports the frames at the timeline FPS.
 
 Playback uses a `setInterval` at the chosen FPS and advances
 `store.previewFrame()`. While playing, `store.playing` blocks canvas input and
@@ -333,7 +337,12 @@ The toolbar **Save File** button and `Ctrl + S` open the shared save dialog:
   files without downloading anything; explicit storage saves run even while
   automatic auto-saving is disabled in Settings,
 - **Current frame**, **Sprite sheet (grid)** (configurable columns), or
-  **Separate images** (`name_001.png`, …).
+  **Separate images** (`name_001.png`, …),
+- **Animated GIF** — offered in animation mode with more than one frame;
+  exports the frames at the timeline FPS as a looping GIF (`shared/gif.ts`
+  holds the LZW/container encoder, `core/gifExport.ts` builds the shared
+  palette and indexed pixels: exact for low-color art, median cut plus
+  nearest-color snapping otherwise).
 - The file name is pre-filled with the document's own name — new documents
   start as "untitled" and only gain a name when saved with one — while the
   format and columns are remembered (`settings.saveFormat` /
@@ -422,9 +431,10 @@ copy/paste/new layer/duplicate/merge), and maps single keys to tools via
 `toolForShortcut()`. Space is context-sensitive: it pans (drag) normally, or
 toggles animation playback in animation mode. While the Text tool is editing, it
 handles Escape/Enter/Backspace/characters instead. `Delete`/`Backspace` clears
-the selection, or deletes the focused layer when the last click was on a layer
-row (`store.layerFocus`, set by the mini/full Layers lists and cleared by clicks
-elsewhere in `main.ts`). Actions that belong to the app wiring (saving, tool
+the selection, or deletes the focused frame / focused layer: clicking a
+timeline frame sets `store.frameFocus`, clicking a row in the mini/full Layers
+lists sets `store.layerFocus`, and clicks elsewhere (in `main.ts`) clear both;
+a focused frame wins. Actions that belong to the app wiring (saving, tool
 selection, timeline, space-pan state) are injected as hooks by `main.ts`.
 
 ## Build & deployment

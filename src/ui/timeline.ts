@@ -12,6 +12,7 @@ export interface Timeline {
     sync(): void;
     togglePlay(): void;
     stopPlayback(): void;
+    getFps(): number;
 }
 
 const THUMB_W = 84;
@@ -198,6 +199,8 @@ export function createTimeline(ctx: AppContext, onLayout: () => void, prepare: (
                     onclick: () => {
                         stopPlayback();
                         prepare();
+                        // Remember the click so Delete removes this frame.
+                        store.setFrameFocus(true);
                         store.selectFrame(index);
                     },
                 },
@@ -352,5 +355,5 @@ export function createTimeline(ctx: AppContext, onLayout: () => void, prepare: (
         onionCheckbox.disabled = store.currentFrame === 0;
     }
 
-    return { root, sync, togglePlay, stopPlayback };
+    return { root, sync, togglePlay, stopPlayback, getFps: currentFps };
 }

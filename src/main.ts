@@ -269,7 +269,7 @@ function saveDocument(): void {
             commitText();
         }
         commitFloating();
-        openSaveDialog(store);
+        openSaveDialog(store, timeline?.getFps() ?? 12);
     }
 }
 
@@ -1043,13 +1043,17 @@ window.addEventListener('paste', (event) => {
 // --- Layer focus (Delete removes the focused layer) ---
 
 // Clicking a layer row focuses it; any click outside the layer lists clears
-// that focus, so Delete falls back to deleting the selection.
+// that focus, so Delete falls back to deleting the selection. Timeline frames
+// work the same way for the frame-focus Delete.
 window.addEventListener(
     'pointerdown',
     (event) => {
         const target = event.target instanceof Element ? event.target : null;
         if (!target?.closest('.mini-layer-list, .layer-list')) {
             store.setLayerFocus(false);
+        }
+        if (!target?.closest('.frame-strip')) {
+            store.setFrameFocus(false);
         }
     },
     true,

@@ -154,6 +154,14 @@ export function installShortcuts(hooks: ShortcutHooks): void {
             return;
         }
         if (event.key === 'Delete' || event.key === 'Backspace') {
+            // With a timeline frame focused (last click was on the frame
+            // strip), Delete removes that frame instead of the layer/selection.
+            if (store.settings.animationMode && store.frameFocus && store.frameCount > 1) {
+                event.preventDefault();
+                commitFloating();
+                store.deleteFrame(store.currentFrame);
+                return;
+            }
             // With a layer row focused (last click was on the Layers list),
             // Delete removes the layer instead of the selection.
             if (store.layerFocus && store.layers.length > 1) {

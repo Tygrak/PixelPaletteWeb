@@ -617,6 +617,14 @@ export class Store {
         this.layerFocus = focused;
     }
 
+    // True while the last click was on a timeline frame. Delete then removes
+    // that frame instead of the layer/selection; any click elsewhere clears it.
+    frameFocus = false;
+
+    setFrameFocus(focused: boolean): void {
+        this.frameFocus = focused;
+    }
+
     setLayerVisible(index: number, visible: boolean): void {
         const layer = this.layers[index];
         if (!layer) {

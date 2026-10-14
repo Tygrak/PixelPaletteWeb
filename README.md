@@ -33,7 +33,7 @@ npm run preview  # serve the production build
 - **Layers:** add, duplicate, reorder, merge, delete, per-layer visibility, live
   compositing, and a compact layer list in the sidebar.
 - **Animation:** a frame timeline with playback, onion skinning, and export as a
-  sprite sheet or separate images.
+  sprite sheet, separate images, or a looping animated GIF.
 - **Palette & dithering:** median-cut, K-means, HML-sector, hue-cluster and
   duo-tone palettes; threshold, random, ordered (Bayer), Floyd–Steinberg and
   min-average-error dithering.
@@ -85,6 +85,7 @@ less, otherwise 2).
 | Deselect                                 | `Esc` |
 | Delete selection (to transparency)       | `Delete` / `Backspace` |
 | Delete focused layer (after clicking a layer in the Layers list) | `Delete` / `Backspace` |
+| Delete focused frame (after clicking a frame in the timeline) | `Delete` / `Backspace` |
 | Play / pause animation (Animation mode)  | `Space` |
 
 ## Layer shortcuts
@@ -100,9 +101,10 @@ less, otherwise 2).
 **Save File** (`Ctrl + S`) offers several formats: a **project file**
 (`.pixelpalette`) that keeps every layer and frame (plus the palette, brush
 and modifier settings), **browser storage** (keeps a copy in the recent files
-without downloading anything), the current frame, a sprite sheet grid, or
-separate PNGs per frame. The name field starts from the document's own name —
-new documents are "untitled" until saved with a name.
+without downloading anything), the current frame, a sprite sheet grid,
+separate PNGs per frame, or — in animation mode with more than one frame — a
+looping **animated GIF** at the timeline FPS. The name field starts from the
+document's own name — new documents are "untitled" until saved with a name.
 **Open File** reopens projects and images: the dialog can pick a file from
 your computer, paste an image from the clipboard, accept a
 dragged-and-dropped file, or load one of the recent auto-saves it lists.

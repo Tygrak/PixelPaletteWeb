@@ -4,7 +4,7 @@
 export type CanvasBackdrop = 'checker' | 'black' | 'white';
 
 // What the Save dialog exports.
-export type SaveFormat = 'project' | 'storage' | 'current' | 'grid' | 'separate';
+export type SaveFormat = 'project' | 'storage' | 'current' | 'grid' | 'separate' | 'gif';
 
 export interface Settings {
     canvasWidth: number;
