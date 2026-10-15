@@ -1,13 +1,11 @@
-import { blurImage, shiftHsl } from '../core/adjust';
+import { blurImage, grayscaleImage, invertImage, shiftHsl } from '../core/adjust';
 import { AppContext } from '../context';
 import { button, createDockPanel, createTabs, DockPanel, h, num, numeric, rowHint } from '../shared/dom';
-import { calculateAverageBrightnessError, calculateAverageError, flipImage, resizeImage, rotateImage } from '../shared/image';
+import { calculateAverageBrightnessError, calculateAverageError, flipImage, rotateImage } from '../shared/image';
 
 export function openAdjustmentsPanel(ctx: AppContext, onClose?: () => void): DockPanel {
     const { store } = ctx;
-    let unlisten: (() => void) | null = null;
     const panel = createDockPanel(ctx.dock, 'Adjustments', () => {
-        unlisten?.();
         onClose?.();
     });
 
@@ -19,40 +17,21 @@ export function openAdjustmentsPanel(ctx: AppContext, onClose?: () => void): Doc
         ctx.applyImage(result);
     };
 
-    // --- Transform ---
-    const widthInput = numeric(512, { min: 1, width: 200 });
-    const heightInput = numeric(512, { min: 1, width: 200 });
-    const lockRatio = document.createElement('input');
-    lockRatio.type = 'checkbox';
-    lockRatio.checked = true;
-    let ratio = num(widthInput) / num(heightInput);
-
-    const updateRatio = (): void => {
-        const height = num(heightInput) || 1;
-        ratio = num(widthInput) / height;
-    };
-    widthInput.addEventListener('input', () => {
-        if (lockRatio.checked) {
-            heightInput.value = String(Math.round(num(widthInput) / ratio));
-        }
-    });
-    heightInput.addEventListener('input', () => {
-        if (lockRatio.checked) {
-            widthInput.value = String(Math.round(num(heightInput) * ratio));
-        }
-    });
-    lockRatio.addEventListener('click', updateRatio);
-
-    const transformTab = h('div', { class: 'tab-content' }, [
-        rowHint('New width:', 'Target width of the resized image, in pixels.', widthInput),
-        rowHint('New height:', 'Target height of the resized image, in pixels.', heightInput),
-        rowHint('Lock Ratio:', 'Keep the current width-to-height ratio while resizing.', lockRatio),
+    // --- Common (color adjustments + rotate/flip; resizing has its own tool) ---
+    const commonTab = h('div', { class: 'tab-content' }, [
         h('div', { class: 'button-row' }, [
-            button('Resize', async () => {
-                const width = Math.max(1, Math.trunc(num(widthInput)));
-                const height = Math.max(1, Math.trunc(num(heightInput)));
-                await apply('Resizing image', () => resizeImage(store.activeImage!, width, height));
-            }),
+            button(
+                'Invert Colors',
+                () => apply('Inverting colors', () => invertImage(store.activeImage!)),
+                'Invert every color channel; transparent pixels stay transparent.',
+            ),
+        ]),
+        h('div', { class: 'button-row' }, [
+            button(
+                'Grayscale',
+                () => apply('Converting to grayscale', () => grayscaleImage(store.activeImage!)),
+                'Replace every color with its grayscale luminance.',
+            ),
         ]),
         h('div', { class: 'divider' }),
         h('div', { class: 'row' }, [
@@ -69,6 +48,7 @@ export function openAdjustmentsPanel(ctx: AppContext, onClose?: () => void): Doc
                 button('Y Axis', () => apply('Flipping image', () => flipImage(store.activeImage!, 'y'))),
             ]),
         ]),
+        h('div', { class: 'panel-hint', text: 'To change the image size, use the Resize Image tool (R).' }),
     ]);
 
     // --- HSL shift ---
@@ -138,27 +118,12 @@ export function openAdjustmentsPanel(ctx: AppContext, onClose?: () => void): Doc
 
     panel.body.append(
         createTabs([
-            { label: 'Transform', content: transformTab },
+            { label: 'Common', content: commonTab },
             { label: 'HSL shift', content: hslTab },
             { label: 'Blur', content: blurTab },
             { label: 'Compare', content: compareTab },
         ]),
     );
-
-    // Keep resize fields in sync with the current image while the dialog is open.
-    let lastImage: ImageData | null = null;
-    const sync = (): void => {
-        if (store.activeImage && store.activeImage !== lastImage) {
-            lastImage = store.activeImage;
-            if (lockRatio.checked) {
-                widthInput.value = String(store.activeImage.width);
-                heightInput.value = String(store.activeImage.height);
-                updateRatio();
-            }
-        }
-    };
-    unlisten = store.onChange(sync);
-    sync();
 
     return panel;
 }

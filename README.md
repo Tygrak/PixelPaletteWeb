@@ -37,7 +37,8 @@ npm run preview  # serve the production build
 - **Palette & dithering:** median-cut, K-means, HML-sector, hue-cluster and
   duo-tone palettes; threshold, random, ordered (Bayer), Floyd–Steinberg and
   min-average-error dithering.
-- **Adjustments:** resize, rotate, flip, HSL shift, blur, and compare.
+- **Adjustments:** invert colors, grayscale, rotate, flip, HSL shift, blur,
+  and compare.
 - **Effects:** Sobel edge detection with hysteresis and auto thresholds.
 - **Project files:** save the whole session — every layer, frame and the
   palette — as a `.pixelpalette` file and reopen it later, instead of only

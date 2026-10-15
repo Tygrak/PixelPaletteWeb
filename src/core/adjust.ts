@@ -3,6 +3,36 @@
 import { clampRgbToColor, colorToHsl, hslToColor, RGB } from '../shared/color';
 import { colorArrayFromImage, createEmptyImage, setPixel } from '../shared/image';
 
+// Inverts the RGB channels of every pixel (alpha is preserved, so transparent
+// areas stay transparent).
+export function invertImage(img: ImageData): ImageData {
+    const result = createEmptyImage(img.width, img.height);
+    const source = img.data;
+    const target = result.data;
+    for (let i = 0; i < source.length; i += 4) {
+        target[i] = 255 - source[i];
+        target[i + 1] = 255 - source[i + 1];
+        target[i + 2] = 255 - source[i + 2];
+        target[i + 3] = source[i + 3];
+    }
+    return result;
+}
+
+// Replaces every pixel with its grayscale luminance (alpha is preserved).
+export function grayscaleImage(img: ImageData): ImageData {
+    const result = createEmptyImage(img.width, img.height);
+    const source = img.data;
+    const target = result.data;
+    for (let i = 0; i < source.length; i += 4) {
+        const gray = Math.round(0.299 * source[i] + 0.587 * source[i + 1] + 0.114 * source[i + 2]);
+        target[i] = gray;
+        target[i + 1] = gray;
+        target[i + 2] = gray;
+        target[i + 3] = source[i + 3];
+    }
+    return result;
+}
+
 export function shiftHsl(img: ImageData, hueShift: number, saturation: number, lightness: number): ImageData {
     const colors = colorArrayFromImage(img);
     const result = createEmptyImage(img.width, img.height);

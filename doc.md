@@ -41,7 +41,7 @@ src/
     brushLibrary.ts  Brush overrides + custom brushes (persisted)
     palette.ts       Median Cut, K-Means, HML sectors, hue clusters, Duo Tone, sorting
     dither.ts        Threshold, Random, Ordered, Floyd–Steinberg, MinAvgErr
-    adjust.ts        HSL shift, separable blur
+    adjust.ts        Invert/grayscale, HSL shift, separable blur
     effects.ts       Edge detection (Sobel + hysteresis + dilation)
     modifiers.ts     Symmetry guides, transforms, symmetrized fills, palette lock
   editor/            Interactive editing session state
@@ -57,11 +57,11 @@ src/
     panels.ts        Sidebar docked-panel toggles
     palettePanel.ts  Palette generation/editing
     ditherPanel.ts   Dithering
-    adjustmentsPanel.ts  Transform / HSL / blur / compare
+    adjustmentsPanel.ts  Common / HSL / blur / compare
     effectsPanel.ts  Edge detection
     layersPanel.ts   Full Layers panel
     miniLayers.ts    Compact sidebar layers list
-    newFileDialog.ts New file dialog (size / clipboard image)
+    newFileDialog.ts New file dialog (size presets / animation mode / clipboard image)
     timeline.ts      Animation timeline (frames, playback, onion skin)
     saveDialog.ts    Save/export dialog (project / current / grid / separate)
     openFileDialog.ts  Open dialog (disk / recent / clipboard / drag and drop)

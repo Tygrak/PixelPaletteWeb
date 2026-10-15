@@ -215,13 +215,16 @@ async function newFileAction(): Promise<void> {
     if (!choice) {
         return;
     }
+    // The size entered in the dialog applies to this document only; the
+    // default canvas size in Settings stays untouched. Animation mode follows
+    // the dialog's choice (and can be changed later in Settings).
+    store.updateSettings({ animationMode: choice.animationMode });
     if ('image' in choice) {
         // A new file always resets the palette; when it comes from an image,
         // derive it from that image like a first paste does.
         openDocument(choice.image, true);
         return;
     }
-    store.updateSettings({ canvasWidth: choice.width, canvasHeight: choice.height });
     newDocument(choice.width, choice.height);
 }
 
