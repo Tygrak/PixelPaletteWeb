@@ -1,10 +1,11 @@
-// Compact layers list shown at the bottom of the sidebar while the full
-// docked Layers panel is closed. It lists the layers, lets you select and
-// reorder them, and has add / delete buttons.
+// Compact node list shown at the bottom of the sidebar while the full docked
+// Layers panel is closed. It lists the layer tree (groups with indented
+// children), lets you select, reorder and nest nodes, and has add / delete
+// buttons.
 
 import { h } from '../shared/dom';
-import { EYE_ICON, EYE_OFF_ICON } from './icons';
 import { Store } from '../core/store';
+import { createLayerList } from './layerList';
 
 export interface MiniLayers {
     root: HTMLElement;
@@ -20,7 +21,17 @@ const TRASH_ICON = WRAP(
 );
 
 export function createMiniLayers(store: Store, isFullPanelOpen: () => boolean): MiniLayers {
-    const list = h('div', { class: 'mini-layer-list' });
+    const list = createLayerList({
+        store,
+        listClass: 'mini-layer-list',
+        rowClass: 'mini-layer-item',
+        headerClass: 'mini-layer-group',
+        nameClass: 'mini-layer-name',
+        renameClass: 'layer-rename',
+        rename: true,
+        indentBase: 4,
+        indentStep: 12,
+    });
 
     const addButton = h('button', {
         class: 'mini-layers-btn',
@@ -31,7 +42,7 @@ export function createMiniLayers(store: Store, isFullPanelOpen: () => boolean): 
 
     const deleteButton = h('button', {
         class: 'mini-layers-btn',
-        title: 'Delete layer',
+        title: 'Delete the selected layers/groups',
         onclick: () => store.deleteLayer(),
     });
     deleteButton.innerHTML = TRASH_ICON;
@@ -42,145 +53,8 @@ export function createMiniLayers(store: Store, isFullPanelOpen: () => boolean): 
             addButton,
             deleteButton,
         ]),
-        list,
+        list.root,
     ]);
-
-    let lastStructure = '';
-    let lastActive = -1;
-    let rowElements: HTMLElement[] = [];
-    let ignoreNextClick = false;
-
-    let dragState: {
-        fromDisplay: number;
-        startY: number;
-        row: HTMLElement;
-        moved: boolean;
-        targetDisplay: number;
-        pointerId: number;
-    } | null = null;
-
-    const clearDropClasses = (): void => {
-        for (const row of rowElements) {
-            row.classList.remove('drop-above', 'drop-below');
-        }
-    };
-
-    const onRowDown = (event: PointerEvent, row: HTMLElement): void => {
-        if (event.button !== 0) {
-            return;
-        }
-        const fromDisplay = rowElements.indexOf(row);
-        if (fromDisplay < 0) {
-            return;
-        }
-        dragState = {
-            fromDisplay,
-            startY: event.clientY,
-            row,
-            moved: false,
-            targetDisplay: fromDisplay,
-            pointerId: event.pointerId,
-        };
-    };
-
-    const onRowMove = (event: PointerEvent): void => {
-        if (!dragState || event.pointerId !== dragState.pointerId) {
-            return;
-        }
-        if (!dragState.moved && Math.abs(event.clientY - dragState.startY) < 4) {
-            return;
-        }
-        if (!dragState.moved) {
-            dragState.moved = true;
-            dragState.row.setPointerCapture(event.pointerId);
-            dragState.row.classList.add('dragging');
-        }
-        let target = rowElements.length;
-        for (let d = 0; d < rowElements.length; d++) {
-            const rect = rowElements[d].getBoundingClientRect();
-            if (event.clientY < rect.top + rect.height / 2) {
-                target = d;
-                break;
-            }
-        }
-        dragState.targetDisplay = target;
-        clearDropClasses();
-        if (target < rowElements.length) {
-            rowElements[target].classList.add('drop-above');
-        } else {
-            rowElements[rowElements.length - 1]?.classList.add('drop-below');
-        }
-    };
-
-    const onRowUp = (event: PointerEvent): void => {
-        if (!dragState || event.pointerId !== dragState.pointerId) {
-            return;
-        }
-        const state = dragState;
-        dragState = null;
-        for (const row of rowElements) {
-            row.classList.remove('dragging');
-        }
-        clearDropClasses();
-        if (state.moved && state.row.hasPointerCapture(event.pointerId)) {
-            state.row.releasePointerCapture(event.pointerId);
-        }
-        if (!state.moved) {
-            return;
-        }
-        ignoreNextClick = true;
-        const displayIds = rowElements.map((row) => Number(row.dataset.id));
-        const from = state.fromDisplay;
-        let insertAt = state.targetDisplay > from ? state.targetDisplay - 1 : state.targetDisplay;
-        insertAt = Math.max(0, Math.min(displayIds.length - 1, insertAt));
-        const [moved] = displayIds.splice(from, 1);
-        displayIds.splice(insertAt, 0, moved);
-        store.reorderLayers(displayIds.slice().reverse());
-    };
-
-    const updateActive = (): void => {
-        rowElements.forEach((row, display) => {
-            const index = store.layers.length - 1 - display;
-            row.classList.toggle('active', index === store.activeIndex);
-        });
-    };
-
-    const rebuild = (): void => {
-        list.replaceChildren();
-        rowElements = [];
-        for (let i = store.layers.length - 1; i >= 0; i--) {
-            const layer = store.layers[i];
-            const eye = h('button', {
-                class: `layer-eye${layer.visible ? '' : ' off'}`,
-                title: layer.visible ? 'Hide layer' : 'Show layer',
-            });
-            eye.innerHTML = layer.visible ? EYE_ICON : EYE_OFF_ICON;
-            eye.addEventListener('pointerdown', (event) => event.stopPropagation());
-            eye.addEventListener('click', (event) => {
-                event.stopPropagation();
-                store.setLayerVisible(i, !layer.visible);
-            });
-            const row = h('div', { class: 'mini-layer-item' }, [
-                eye,
-                h('span', { class: 'mini-layer-name', text: layer.name, title: layer.name }),
-            ]);
-            row.dataset.id = String(layer.id);
-            row.addEventListener('click', () => {
-                if (ignoreNextClick) {
-                    ignoreNextClick = false;
-                    return;
-                }
-                store.setActiveLayer(i);
-                store.setLayerFocus(true);
-            });
-            row.addEventListener('pointerdown', (event) => onRowDown(event, row));
-            row.addEventListener('pointermove', onRowMove);
-            row.addEventListener('pointerup', onRowUp);
-            row.addEventListener('pointercancel', onRowUp);
-            list.append(row);
-            rowElements.push(row);
-        }
-    };
 
     function sync(): void {
         const show = store.layers.length > 0 && !isFullPanelOpen();
@@ -188,15 +62,7 @@ export function createMiniLayers(store: Store, isFullPanelOpen: () => boolean): 
         if (!show) {
             return;
         }
-        const structure = store.layers.map((layer) => `${layer.id}:${layer.visible}:${layer.name}`).join('|');
-        if (structure !== lastStructure) {
-            lastStructure = structure;
-            rebuild();
-        }
-        if (store.activeIndex !== lastActive || structure === lastStructure) {
-            lastActive = store.activeIndex;
-            updateActive();
-        }
+        list.sync();
         addButton.disabled = false;
         deleteButton.disabled = store.layers.length < 2;
     }

@@ -32,7 +32,7 @@ src/
     project.ts       Project file format (binary: all frames/layers/palette)
     recentFiles.ts   Recent-files auto-save in IndexedDB (crash recovery)
     gifExport.ts     Animation → shared palette + indexed frames → GIF
-    layers.ts        Layer model + source-over compositing
+    layers.ts        Layer tree model + source-over compositing
     selection.ts     Marquee / lasso / wand masks + selection overlay
     floating.ts      Floating bitmap + transform box math, lift/bake
     text.ts          Rasterize the Text tool onto a layer
@@ -59,7 +59,8 @@ src/
     ditherPanel.ts   Dithering
     adjustmentsPanel.ts  Common / HSL / blur / compare
     effectsPanel.ts  Edge detection
-    layersPanel.ts   Full Layers panel
+    layersPanel.ts   Full Layers panel (uses ui/layerList.ts)
+    layerList.ts     Shared layer-tree list: selection, rename, drag & drop
     miniLayers.ts    Compact sidebar layers list
     newFileDialog.ts New file dialog (size presets / animation mode / clipboard image)
     timeline.ts      Animation timeline (frames, playback, onion skin)
@@ -140,16 +141,36 @@ document.
 
 ### Layers (`core/layers.ts`)
 
-A `Layer` has `{ id, name, image, visible, opacity, offsetX, offsetY }`.
-Layers may have different image sizes and offsets; `compositeLayers` draws each
-visible layer at its offset, clipped to the document bounds, using source-over
-alpha. A fast path returns the single visible layer's image directly when there
-is no offset/opacity.
+The document is a **node tree**: `LayerNode = Layer | LayerGroup`, ordered
+bottom to top. A `Layer` has `{ id, name, image, visible, opacity, offsetX,
+offsetY }`; a `LayerGroup` has `{ id, name, visible, children }` and children
+may be layers or further groups, so **groups nest arbitrarily**. Layers may
+have different image sizes and offsets; `compositeLayers` flattens the visible
+layers (a hidden group hides its whole subtree) and draws each at its offset,
+clipped to the document bounds, using source-over alpha. A fast path returns
+the single visible layer's image directly when there is no offset/opacity.
+`flattenDisplayNodes` yields the top-first order the Layers lists render.
+
+The shared list (`ui/layerList.ts`) drives both the Layers panel and the mini
+list: click / Ctrl+click / Shift+click selection over nodes, inline rename,
+per-node eye toggles and drag & drop. The store exposes node operations
+(`selectNode`, `moveNodes`, `groupSelectedLayers`, `ungroupSelectedLayers`,
+`mergeSelectedLayers`, `mergeLayers`, `duplicateLayer`, `deleteLayer`,
+`renameNode`, `setNodeVisible`); the active layer is tracked by id and is
+always a real layer (clicking a group focuses its topmost layer). Drop rules:
+**onto a group header** = top of that group, **between rows** = the level of
+the row below (so gaps inside a group stay inside it), **above a group header**
+= above the group, and at the very bottom = below the last row. Groups can
+never be moved into themselves. Group Layers (Ctrl+G) wraps the selected nodes
+in a new group (needs two or more), Ungroup dissolves selected groups into
+their parents, Merge Selected (Ctrl+E, also merges a single selected group)
+flattens selected nodes into one layer, and new layers/pastes go above the
+active layer in its own group.
 
 ### History
 
 Undo/redo is **per frame**, capped at `HISTORY_LIMIT = 30`. `pushHistory()`
-stores a `Snapshot` (`layers`, `activeIndex`, `width`, `height`, `palette`).
+stores a `Snapshot` (`nodes`, `activeId`, `width`, `height`, `palette`).
 `undo()` moves the current state to the redo stack and restores the snapshot.
 The palette is part of the snapshot so palette edits that recolored the image
 (palette lock) revert together with the pixels.
@@ -358,11 +379,13 @@ link, and text import/export for palettes.
 A project is a small binary container holding the whole session: every frame
 and, per layer, its name, visibility, opacity, offsets and pixels. Layout:
 `"PPAL"` magic + version + manifest length, then a JSON manifest (dimensions,
-frames/layers with an `imageIndex` each, image byte lengths, palette,
-foreground color, the selected brush and size, and the drawing modifier state
-— the symmetry guide and palette lock), then the PNG blobs back to back. PNGs
-are stored raw instead of as base64 data URLs inside JSON (which inflated them
-by 33%), and pixel-identical images (e.g. duplicated layers) share one blob.
+frames whose node trees hold layers/groups with an `imageIndex` per layer,
+image byte lengths, palette, foreground color, the selected brush and size,
+and the drawing modifier state — the symmetry guide and palette lock), then
+the PNG blobs back to back. Version 3 stores the node tree; version 2 files
+(flat layers + group table) are folded into groups on load. PNGs are stored
+raw instead of as base64 data URLs inside JSON (which inflated them by 33%),
+and pixel-identical images (e.g. duplicated layers) share one blob.
 The original image the document was opened from is deliberately not stored — a
 second full copy roughly doubled the file size — so on load Restore targets
 the saved state, which is recomputed by compositing the loaded frame. The
@@ -427,7 +450,7 @@ sized down to the number of distinct colors found.
 
 All shortcuts are handled by `installShortcuts()` in `shortcuts.ts`. It ignores
 input while typing in a field, routes `Ctrl` combinations (undo/redo/save/
-copy/paste/new layer/duplicate/merge), and maps single keys to tools via
+copy/paste/new layer/duplicate/merge/group), and maps single keys to tools via
 `toolForShortcut()`. Space is context-sensitive: it pans (drag) normally, or
 toggles animation playback in animation mode. While the Text tool is editing, it
 handles Escape/Enter/Backspace/characters instead. `Delete`/`Backspace` clears

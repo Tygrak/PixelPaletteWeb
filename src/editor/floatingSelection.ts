@@ -178,7 +178,7 @@ function liftToFloating(copy: boolean): boolean {
         return false;
     }
     store.pushHistory();
-    store.layers[store.activeIndex] = { ...layer, image: result.cleared };
+    store.replaceActiveLayer({ ...layer, image: result.cleared });
     floating = result.floating;
     floatingMask = store.selection;
     floatingOriginCx = result.floating.cx;
@@ -220,7 +220,7 @@ function liftWholeLayerToFloating(copy: boolean): boolean {
         return false;
     }
     store.pushHistory();
-    store.layers[store.activeIndex] = { ...layer, image: result.cleared };
+    store.replaceActiveLayer({ ...layer, image: result.cleared });
     floating = result.floating;
     floatingMask = null;
     floatingWholeLayer = true;
@@ -364,7 +364,7 @@ export function commitFloating(): void {
         const target = createEmptyImage(store.width, store.height);
         target.data.set(layer.image.data);
         compositeOverLayer(target, baked, layer.offsetX, layer.offsetY);
-        store.layers[store.activeIndex] = { ...layer, image: target };
+        store.replaceActiveLayer({ ...layer, image: target });
     }
     const transformed = floatingWholeLayer
         ? null

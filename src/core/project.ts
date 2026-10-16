@@ -7,24 +7,30 @@
 // instead of being inflated by base64 (+33%) inside JSON:
 //
 //   bytes 0..3   "PPAL" magic
-//   bytes 4..7   uint32 LE format version (2)
+//   bytes 4..7   uint32 LE format version (3)
 //   bytes 8..11  uint32 LE manifest length
-//   next         manifest JSON (UTF-8): dimensions, frames/layers (with an
-//                imageIndex each), the image byte lengths, palette/foreground
+//   next         manifest JSON (UTF-8): dimensions, frames whose node trees
+//                hold layers/groups (with an imageIndex per layer), the image
+//                byte lengths, palette/foreground and tool state
 //   rest         the PNG blobs back to back
 //
 // Identical images (e.g. a duplicated layer) share one blob. The original
 // image the document was opened from is deliberately NOT stored: a second full
 // copy roughly doubled the file size, so on load Restore targets the saved
-// state instead.
-//
-// The same serializer backs the downloaded .pixelpalette files and the
-// automatic recent-files saves (core/recentFiles.ts, IndexedDB).
+// state instead. Version 2 files (flat layers + groups) are still readable.
 
 import { rgb, RGB } from '../shared/color';
 import { downloadBlob, imageDataFromBlob, imageDataToPngDataUrl } from '../shared/files';
 import { brushById } from './brushLibrary';
-import { compositeLayers, createLayer, Layer } from './layers';
+import {
+    compositeLayers,
+    createGroup,
+    createLayer,
+    isGroup,
+    Layer,
+    LayerGroup,
+    LayerNode,
+} from './layers';
 import {
     MAX_SYMMETRY_SEGMENTS,
     MIN_SYMMETRY_SEGMENTS,
@@ -34,7 +40,7 @@ import {
 import type { DocumentData, Store } from './store';
 
 export const PROJECT_FORMAT = 'pixelpalette';
-export const PROJECT_VERSION = 2;
+export const PROJECT_VERSION = 3;
 export const PROJECT_EXTENSION = '.pixelpalette';
 
 // "PPAL"
@@ -44,18 +50,45 @@ const MAGIC_C = 0x41;
 const MAGIC_D = 0x4c;
 const HEADER_BYTES = 12;
 
-export interface ProjectLayer {
+// One node of a frame's tree. Layers carry pixels (imageIndex) and offsets;
+// groups carry children (which may hold further groups).
+export interface ProjectNode {
+    id: number;
+    kind: 'layer' | 'group';
+    name: string;
+    visible: boolean;
+    // Layers:
+    opacity?: number;
+    offsetX?: number;
+    offsetY?: number;
+    imageIndex?: number;
+    // Groups:
+    children?: ProjectNode[];
+}
+
+export interface ProjectFrame {
+    activeId: number;
+    nodes: ProjectNode[];
+    // Legacy (version 2) flat shape, still read for compatibility.
+    activeIndex?: number;
+    layers?: LegacyProjectLayer[];
+    groups?: LegacyProjectGroup[];
+}
+
+interface LegacyProjectLayer {
     name: string;
     visible: boolean;
     opacity: number;
     offsetX: number;
     offsetY: number;
     imageIndex: number;
+    groupId?: number | null;
 }
 
-export interface ProjectFrame {
-    activeIndex: number;
-    layers: ProjectLayer[];
+interface LegacyProjectGroup {
+    id: number;
+    name: string;
+    visible: boolean;
 }
 
 export interface ProjectManifest {
@@ -187,17 +220,31 @@ export function encodeProject(store: Store): Blob {
         images.push(dataUrl);
         return images.length - 1;
     };
+    const encodeNode = (node: LayerNode): ProjectNode =>
+        isGroup(node)
+            ? {
+                  id: node.id,
+                  kind: 'group',
+                  name: node.name,
+                  visible: node.visible,
+                  children: node.children.map(encodeNode),
+              }
+            : {
+                  id: node.id,
+                  kind: 'layer',
+                  name: node.name,
+                  visible: node.visible,
+                  opacity: node.opacity,
+                  offsetX: node.offsetX,
+                  offsetY: node.offsetY,
+                  imageIndex: addImage(node.image),
+              };
     const frames: ProjectFrame[] = [];
     for (let i = 0; i < store.frameCount; i++) {
-        const layers: ProjectLayer[] = store.frameLayers(i).map((layer) => ({
-            name: layer.name,
-            visible: layer.visible,
-            opacity: layer.opacity,
-            offsetX: layer.offsetX,
-            offsetY: layer.offsetY,
-            imageIndex: addImage(layer.image),
-        }));
-        frames.push({ activeIndex: store.frameActiveIndex(i), layers });
+        frames.push({
+            activeId: store.frameActiveId(i),
+            nodes: store.frameNodes(i).map(encodeNode),
+        });
     }
     const imageBytes = images.map(dataUrlToBytes);
     const manifest: ProjectManifest = {
@@ -287,23 +334,24 @@ async function decodeBinaryProject(bytes: Uint8Array<ArrayBuffer>): Promise<Docu
     }
     const frames: DocumentData['frames'] = [];
     for (const frame of manifest.frames) {
-        const layers: Layer[] = [];
-        for (const saved of Array.isArray(frame?.layers) ? frame.layers : []) {
-            const pixels = typeof saved.imageIndex === 'number' ? (images[saved.imageIndex] ?? null) : null;
-            if (!pixels) {
-                continue;
-            }
-            const layer = createLayer(pixels.width, pixels.height, sanitizeLayerName(saved.name), pixels);
-            layer.visible = saved.visible !== false;
-            layer.opacity = typeof saved.opacity === 'number' ? Math.max(0, Math.min(1, saved.opacity)) : 1;
-            layer.offsetX = typeof saved.offsetX === 'number' ? Math.round(saved.offsetX) : 0;
-            layer.offsetY = typeof saved.offsetY === 'number' ? Math.round(saved.offsetY) : 0;
-            layers.push(layer);
+        // Version 3 stores the node tree; version 2 stored flat layers plus a
+        // group table, converted here so old files keep working.
+        const idMap = new Map<number, number>();
+        let nodes: LayerNode[];
+        let activeId: number;
+        if (Array.isArray(frame?.nodes)) {
+            nodes = await decodeNodes(frame.nodes, images, idMap);
+            activeId = typeof frame.activeId === 'number' ? (idMap.get(frame.activeId) ?? 0) : 0;
+        } else {
+            const legacy = decodeLegacyFrame(frame, images);
+            nodes = legacy.nodes;
+            activeId = legacy.activeId;
         }
-        frames.push({
-            layers,
-            activeIndex: typeof frame?.activeIndex === 'number' ? Math.round(frame.activeIndex) : 0,
-        });
+        if (activeId === 0 || !nodesContain(nodes, activeId)) {
+            const layers = collectLayers(nodes);
+            activeId = layers.length > 0 ? layers[layers.length - 1].id : 0;
+        }
+        frames.push({ nodes, activeId });
     }
     const width = Math.max(1, Math.round(manifest.width ?? 1));
     const height = Math.max(1, Math.round(manifest.height ?? 1));
@@ -318,10 +366,9 @@ async function decodeBinaryProject(bytes: Uint8Array<ArrayBuffer>): Promise<Docu
     }
     const foreground = sanitizeColor(manifest.foreground) ?? { ...palette[0] };
     // The original image is not stored; Restore returns to the saved state.
-    const currentLayers = frames[Math.min(frameIndex, frames.length - 1)]?.layers ?? [];
-    const initial = currentLayers.some((layer) => layer.visible && layer.opacity > 0)
-        ? compositeLayers(currentLayers, width, height)
-        : null;
+    const currentFrameData = frames[Math.min(frameIndex, frames.length - 1)];
+    const currentLayers = currentFrameData ? collectLayers(currentFrameData.nodes) : [];
+    const initial = currentLayers.length > 0 ? compositeLayers(currentFrameData.nodes, width, height) : null;
     const symmetry = sanitizeSymmetry(manifest.symmetry);
     if (symmetry && symmetry.length <= 0) {
         // Files without a guide length (or with a broken one) span the document.
@@ -341,6 +388,118 @@ async function decodeBinaryProject(bytes: Uint8Array<ArrayBuffer>): Promise<Docu
         symmetry: symmetry ?? undefined,
         paletteLock: sanitizePaletteLock(manifest.paletteLock) ?? undefined,
     };
+}
+
+function collectLayers(nodes: LayerNode[]): Layer[] {
+    const layers: Layer[] = [];
+    for (const node of nodes) {
+        if (isGroup(node)) {
+            layers.push(...collectLayers(node.children));
+        } else {
+            layers.push(node);
+        }
+    }
+    return layers;
+}
+
+function nodesContain(nodes: LayerNode[], id: number): boolean {
+    for (const node of nodes) {
+        if (node.id === id) {
+            return true;
+        }
+        if (isGroup(node) && nodesContain(node.children, id)) {
+            return true;
+        }
+    }
+    return false;
+}
+
+async function decodeNodes(
+    saved: unknown,
+    images: (ImageData | null)[],
+    idMap: Map<number, number>,
+): Promise<LayerNode[]> {
+    if (!Array.isArray(saved)) {
+        return [];
+    }
+    const nodes: LayerNode[] = [];
+    for (const entry of saved) {
+        if (!entry || typeof entry !== 'object') {
+            continue;
+        }
+        if (entry.kind === 'group') {
+            const group = createGroup(sanitizeLayerName(entry.name));
+            group.visible = entry.visible !== false;
+            group.children = await decodeNodes(entry.children, images, idMap);
+            if (typeof entry.id === 'number') {
+                idMap.set(entry.id, group.id);
+            }
+            nodes.push(group);
+            continue;
+        }
+        const pixels = typeof entry.imageIndex === 'number' ? (images[entry.imageIndex] ?? null) : null;
+        if (!pixels) {
+            continue;
+        }
+        const layer = createLayer(pixels.width, pixels.height, sanitizeLayerName(entry.name), pixels);
+        layer.visible = entry.visible !== false;
+        layer.opacity = typeof entry.opacity === 'number' ? Math.max(0, Math.min(1, entry.opacity)) : 1;
+        layer.offsetX = typeof entry.offsetX === 'number' ? Math.round(entry.offsetX) : 0;
+        layer.offsetY = typeof entry.offsetY === 'number' ? Math.round(entry.offsetY) : 0;
+        if (typeof entry.id === 'number') {
+            idMap.set(entry.id, layer.id);
+        }
+        nodes.push(layer);
+    }
+    return nodes;
+}
+
+// Version 2 stored a flat layer list plus group metadata; contiguous members
+// are folded back into (one level of) groups here.
+function decodeLegacyFrame(
+    frame: ProjectFrame,
+    images: (ImageData | null)[],
+): { nodes: LayerNode[]; activeId: number } {
+    const groups = new Map<number, LegacyProjectGroup>();
+    for (const group of Array.isArray(frame?.groups) ? frame.groups : []) {
+        if (group && typeof group.id === 'number') {
+            groups.set(group.id, group);
+        }
+    }
+    const nodes: LayerNode[] = [];
+    const flat: Layer[] = [];
+    let currentGroup: LayerGroup | null = null;
+    let currentGroupKey: number | null = null;
+    for (const saved of Array.isArray(frame?.layers) ? frame.layers : []) {
+        const pixels = typeof saved.imageIndex === 'number' ? (images[saved.imageIndex] ?? null) : null;
+        if (!pixels) {
+            continue;
+        }
+        const layer = createLayer(pixels.width, pixels.height, sanitizeLayerName(saved.name), pixels);
+        layer.visible = saved.visible !== false;
+        layer.opacity = typeof saved.opacity === 'number' ? Math.max(0, Math.min(1, saved.opacity)) : 1;
+        layer.offsetX = typeof saved.offsetX === 'number' ? Math.round(saved.offsetX) : 0;
+        layer.offsetY = typeof saved.offsetY === 'number' ? Math.round(saved.offsetY) : 0;
+        flat.push(layer);
+        const groupId = typeof saved.groupId === 'number' ? saved.groupId : null;
+        const meta = groupId !== null ? groups.get(groupId) : undefined;
+        if (meta) {
+            if (currentGroup === null || currentGroupKey !== groupId) {
+                currentGroup = createGroup(meta.name);
+                currentGroup.visible = meta.visible !== false;
+                currentGroupKey = groupId;
+                nodes.push(currentGroup);
+            }
+            currentGroup.children.push(layer);
+        } else {
+            currentGroup = null;
+            currentGroupKey = null;
+            nodes.push(layer);
+        }
+    }
+    const activeIndex = typeof frame?.activeIndex === 'number' ? Math.round(frame.activeIndex) : 0;
+    const activeId = flat[Math.max(0, Math.min(activeIndex, flat.length - 1))]?.id ?? 0;
+    return { nodes, activeId };
 }
 
 // Downloads a project as the app's own file type.

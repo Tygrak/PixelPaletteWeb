@@ -119,7 +119,19 @@ export function installShortcuts(hooks: ShortcutHooks): void {
         if (ctrl && event.key.toLowerCase() === 'e') {
             event.preventDefault();
             commitFloating();
-            store.mergeLayers();
+            // With several nodes selected (or one group), merge them into one.
+            const selected = store.topLevelSelectedNodes();
+            if (selected.length >= 2 || (selected.length === 1 && selected[0].kind === 'group')) {
+                store.mergeSelectedLayers();
+            } else {
+                store.mergeLayers();
+            }
+            return;
+        }
+        if (ctrl && event.key.toLowerCase() === 'g') {
+            event.preventDefault();
+            commitFloating();
+            store.groupSelectedLayers();
             return;
         }
         if (ctrl && event.key.toLowerCase() === 'c') {
@@ -205,8 +217,6 @@ export function installShortcuts(hooks: ShortcutHooks): void {
             return;
         }
         if (event.key === '[') {
-            // Small brushes step by one so every size up to 10 is reachable;
-            // bigger brushes keep the coarser step of two.
             const step = store.brushSize <= 10 ? 1 : 2;
             store.setBrushSize(Math.max(1, store.brushSize - step));
             return;

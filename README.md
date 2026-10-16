@@ -30,8 +30,10 @@ npm run preview  # serve the production build
 - **Palette lock modifier:** keep drawn pixels on the palette (hard, opaque
   palette colors even for soft brushes), and optionally recolor image pixels
   when a palette color is edited.
-- **Layers:** add, duplicate, reorder, merge, delete, per-layer visibility, live
-  compositing, and a compact layer list in the sidebar.
+- **Layers:** a layer tree with **nested groups** (groups inside groups), add,
+  duplicate, reorder, drag & drop into/out of groups, merge, delete,
+  per-layer and per-group visibility, live compositing, multi-selection for
+  grouping and merging, and a compact layer list in the sidebar.
 - **Animation:** a frame timeline with playback, onion skinning, and export as a
   sprite sheet, separate images, or a looping animated GIF.
 - **Palette & dithering:** median-cut, K-means, HML-sector, hue-cluster and
@@ -85,7 +87,7 @@ less, otherwise 2).
 | Paste image as a new layer               | `Ctrl + V` |
 | Deselect                                 | `Esc` |
 | Delete selection (to transparency)       | `Delete` / `Backspace` |
-| Delete focused layer (after clicking a layer in the Layers list) | `Delete` / `Backspace` |
+| Delete focused layer or group (after clicking it in the Layers list) | `Delete` / `Backspace` |
 | Delete focused frame (after clicking a frame in the timeline) | `Delete` / `Backspace` |
 | Play / pause animation (Animation mode)  | `Space` |
 
@@ -95,7 +97,8 @@ less, otherwise 2).
 | --------------- | ------------------- |
 | New Layer       | `Ctrl + N`          |
 | Duplicate Layer | `Ctrl + D`          |
-| Merge Down      | `Ctrl + E`          |
+| Merge Down (or merge the selected layers when several are selected) | `Ctrl + E` |
+| Group Selected Layers (needs two or more selected) | `Ctrl + G` |
 
 ## Saving
 

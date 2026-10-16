@@ -48,7 +48,7 @@ import {
 } from './editor/floatingSelection';
 import { toolIcon } from './ui/icons';
 import { countUniqueColors, offsetImage, resizeImage } from './shared/image';
-import { compositeLayers } from './core/layers';
+import { compositeLayers, flattenVisibleLayers, Layer } from './core/layers';
 import { applySymmetrizedFill, hitTestSymmetry, remapToPalette } from './core/modifiers';
 import {
     continueStroke,
@@ -483,7 +483,7 @@ function imageToCanvas(image: ImageData): HTMLCanvasElement {
     return element;
 }
 
-function layersToCanvas(layers: typeof store.layers): HTMLCanvasElement | null {
+function layersToCanvas(layers: Layer[]): HTMLCanvasElement | null {
     if (!layers.some((layer) => layer.visible && layer.opacity > 0)) {
         return null;
     }
@@ -496,9 +496,15 @@ function buildMovePreview(): void {
         movePreview = null;
         return;
     }
+    // Split the visible layers into those below and above the active one, so
+    // the preview can draw the layer at its dragged offset in between.
+    const visible = flattenVisibleLayers(store.nodes);
+    const index = visible.findIndex((entry) => entry.id === layer.id);
+    const below = index >= 0 ? visible.slice(0, index) : visible;
+    const above = index >= 0 ? visible.slice(index + 1) : [];
     movePreview = {
-        below: layersToCanvas(store.layers.slice(0, store.activeIndex)),
-        above: layersToCanvas(store.layers.slice(store.activeIndex + 1)),
+        below: layersToCanvas(below),
+        above: layersToCanvas(above),
         layer: imageToCanvas(layer.image),
     };
 }
@@ -589,7 +595,7 @@ function bakeActiveLayerOffset(): void {
         return;
     }
     const baked = offsetImage(layer.image, layer.offsetX, layer.offsetY);
-    store.layers[store.activeIndex] = { ...layer, image: baked, offsetX: 0, offsetY: 0 };
+    store.replaceActiveLayer({ ...layer, image: baked, offsetX: 0, offsetY: 0 });
     store.notify();
 }
 
@@ -916,7 +922,7 @@ canvas.addEventListener('pointermove', (event) => {
             const offsetX = Math.round(moving.offsetX + dx);
             const offsetY = Math.round(moving.offsetY + dy);
             if (offsetX !== layer.offsetX || offsetY !== layer.offsetY) {
-                store.layers[store.activeIndex] = { ...layer, offsetX, offsetY };
+                store.replaceActiveLayer({ ...layer, offsetX, offsetY });
                 drawMovePreview();
                 redrawOverlay();
             }

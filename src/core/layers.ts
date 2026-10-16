@@ -1,8 +1,11 @@
-// Layer model and compositing (source-over alpha blending).
+// Layer model and compositing (source-over alpha blending). Layers form a
+// tree: a group holds children (layers and other groups), so groups can nest.
+// The arrays are ordered bottom to top (index 0 is drawn first).
 
 import { cloneImage, createEmptyImage } from '../shared/image';
 
 export interface Layer {
+    kind: 'layer';
     id: number;
     name: string;
     image: ImageData;
@@ -12,11 +15,30 @@ export interface Layer {
     offsetY: number;
 }
 
-let nextLayerId = 1;
+export interface LayerGroup {
+    kind: 'group';
+    id: number;
+    name: string;
+    visible: boolean;
+    children: LayerNode[];
+}
+
+export type LayerNode = Layer | LayerGroup;
+
+export function isLayer(node: LayerNode): node is Layer {
+    return node.kind === 'layer';
+}
+
+export function isGroup(node: LayerNode): node is LayerGroup {
+    return node.kind === 'group';
+}
+
+let nextNodeId = 1;
 
 export function createLayer(width: number, height: number, name: string, image?: ImageData): Layer {
     return {
-        id: nextLayerId++,
+        kind: 'layer',
+        id: nextNodeId++,
         name,
         image: image ?? createEmptyImage(width, height),
         visible: true,
@@ -26,23 +48,117 @@ export function createLayer(width: number, height: number, name: string, image?:
     };
 }
 
-export function cloneLayer(layer: Layer): Layer {
-    return { ...layer, image: cloneImage(layer.image) };
+export function createGroup(name: string): LayerGroup {
+    return { kind: 'group', id: nextNodeId++, name, visible: true, children: [] };
 }
 
-// Creates a copy of a layer with a fresh id and the given name.
-export function duplicateLayer(layer: Layer, name: string): Layer {
-    return { ...layer, id: nextLayerId++, name, image: cloneImage(layer.image) };
+// Clones the tree structure (new node objects and arrays) while sharing layer
+// images: callers replace images rather than mutating them in place, so a
+// snapshot's pixels stay intact (see store.beginPaint).
+export function cloneNodes(nodes: LayerNode[]): LayerNode[] {
+    return nodes.map((node) => (isGroup(node) ? { ...node, children: cloneNodes(node.children) } : { ...node }));
 }
 
-// Shallow copy: shares the underlying ImageData (use when the image will be
-// replaced rather than mutated in place).
-export function copyLayer(layer: Layer): Layer {
-    return { ...layer };
+// Deep clone with fresh ids and copied pixels (duplicate layer/group).
+export function duplicateNodes(nodes: LayerNode[]): LayerNode[] {
+    return nodes.map((node) =>
+        isGroup(node)
+            ? { ...node, id: nextNodeId++, children: duplicateNodes(node.children) }
+            : { ...node, id: nextNodeId++, image: cloneImage(node.image) },
+    );
 }
 
-export function compositeLayers(layers: Layer[], width: number, height: number): ImageData {
-    const visible = layers.filter((layer) => layer.visible && layer.opacity > 0);
+export function findNode(nodes: LayerNode[], id: number): LayerNode | null {
+    for (const node of nodes) {
+        if (node.id === id) {
+            return node;
+        }
+        if (isGroup(node)) {
+            const found = findNode(node.children, id);
+            if (found) {
+                return found;
+            }
+        }
+    }
+    return null;
+}
+
+// The group a node lives in, or null when it sits at the root.
+export function findParent(nodes: LayerNode[], id: number): LayerGroup | null {
+    for (const node of nodes) {
+        if (!isGroup(node)) {
+            continue;
+        }
+        if (node.children.some((child) => child.id === id)) {
+            return node;
+        }
+        const found = findParent(node.children, id);
+        if (found) {
+            return found;
+        }
+    }
+    return null;
+}
+
+export function containsNode(group: LayerGroup, id: number): boolean {
+    return findNode(group.children, id) !== null;
+}
+
+// All layers in draw order (bottom to top, depth first).
+export function flattenLayers(nodes: LayerNode[]): Layer[] {
+    const layers: Layer[] = [];
+    for (const node of nodes) {
+        if (isLayer(node)) {
+            layers.push(node);
+        } else {
+            layers.push(...flattenLayers(node.children));
+        }
+    }
+    return layers;
+}
+
+// Visible layers in draw order; a hidden group hides its whole subtree.
+export function flattenVisibleLayers(nodes: LayerNode[]): Layer[] {
+    const layers: Layer[] = [];
+    for (const node of nodes) {
+        if (!node.visible) {
+            continue;
+        }
+        if (isLayer(node)) {
+            if (node.opacity > 0) {
+                layers.push(node);
+            }
+        } else {
+            layers.push(...flattenVisibleLayers(node.children));
+        }
+    }
+    return layers;
+}
+
+// All nodes in display order (top first; a group before its children) — the
+// order the Layers lists render and range selections use.
+export function flattenDisplayNodes(nodes: LayerNode[], out: LayerNode[] = []): LayerNode[] {
+    for (let i = nodes.length - 1; i >= 0; i--) {
+        const node = nodes[i];
+        out.push(node);
+        if (isGroup(node)) {
+            flattenDisplayNodes(node.children, out);
+        }
+    }
+    return out;
+}
+
+// Replaces every layer in the tree through `map`, rebuilding the structure.
+export function mapLayers(nodes: LayerNode[], map: (layer: Layer) => Layer): LayerNode[] {
+    return nodes.map((node) =>
+        isGroup(node)
+            ? { ...node, children: mapLayers(node.children, map) }
+            : map(node),
+    );
+}
+
+export function compositeLayers(nodes: LayerNode[], width: number, height: number): ImageData {
+    const visible = flattenVisibleLayers(nodes);
     if (visible.length === 0) {
         return createEmptyImage(width, height);
     }
@@ -109,19 +225,19 @@ export function compositeLayers(layers: Layer[], width: number, height: number):
 }
 
 // Recomputes just a document-space rectangle of an existing composite (built
-// from the same layers). Painting mutates one layer in place, so only the small
+// from the same nodes). Painting mutates one layer in place, so only the small
 // area a stroke touched needs re-blending instead of the whole document. The
 // math mirrors compositeLayers exactly (including its per-layer rounding) so
 // patched regions are pixel-identical to a full rebuild.
 export function compositeRegion(
     out: ImageData,
-    layers: Layer[],
+    nodes: LayerNode[],
     rectX: number,
     rectY: number,
     rectWidth: number,
     rectHeight: number,
 ): void {
-    const visible = layers.filter((layer) => layer.visible && layer.opacity > 0);
+    const visible = flattenVisibleLayers(nodes);
     const x0 = Math.max(0, Math.floor(rectX));
     const y0 = Math.max(0, Math.floor(rectY));
     const x1 = Math.min(out.width, Math.ceil(rectX + rectWidth));
