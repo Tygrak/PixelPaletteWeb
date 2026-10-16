@@ -1,6 +1,7 @@
 import { store } from '../appStore';
 import {
     bakeFloating,
+    bakeFloatingPart,
     Bounds,
     Box,
     BoxHit,
@@ -10,9 +11,11 @@ import {
     compositeOverLayer,
     computeScale,
     Floating,
+    FloatingPart,
     liftSelection,
     selectionBounds,
 } from '../core/floating';
+import { flattenLayers, Layer } from '../core/layers';
 import { createEmptyImage } from '../shared/image';
 import { rectSelection, Selection } from '../core/selection';
 
@@ -34,6 +37,10 @@ export interface TransformDrag {
 
 let floating: Floating | null = null;
 let transformDrag: TransformDrag | null = null;
+
+// When the floating holds several layers (Move tool with a multi-selection),
+// one piece per layer so each is baked back into the layer it came from.
+let floatingParts: { nodeId: number; part: FloatingPart }[] | null = null;
 
 let cachedBoundsMask: Selection | null = null;
 let cachedBounds: ReturnType<typeof selectionBounds> = null;
@@ -111,20 +118,62 @@ function alphaBounds(image: ImageData): Bounds | null {
 }
 
 // The content bounds scan is O(w*h) and currentBox() runs on every overlay
-// redraw and hover, so the result is cached per image and store revision
-// (revisions only increase, so a hit means the pixels did not change).
-let cachedContentImage: ImageData | null = null;
+// redraw and hover, so results are cached per image for the current store
+// revision (revisions only increase, so a hit means the pixels did not change).
+let cachedContentBounds = new WeakMap<ImageData, Bounds | null>();
 let cachedContentRevision = -1;
-let cachedContentBounds: Bounds | null = null;
 
 function layerContentBounds(image: ImageData): Bounds | null {
-    if (cachedContentImage === image && cachedContentRevision === store.revision) {
-        return cachedContentBounds;
+    if (cachedContentRevision !== store.revision) {
+        cachedContentRevision = store.revision;
+        cachedContentBounds = new WeakMap();
     }
-    cachedContentImage = image;
-    cachedContentRevision = store.revision;
-    cachedContentBounds = alphaBounds(image);
-    return cachedContentBounds;
+    if (cachedContentBounds.has(image)) {
+        return cachedContentBounds.get(image)!;
+    }
+    const bounds = alphaBounds(image);
+    cachedContentBounds.set(image, bounds);
+    return bounds;
+}
+
+// The layers the Move tool acts on: every layer of the selected nodes (a
+// multi-selection moves and transforms them together), or the active layer on
+// its own.
+export function moveToolLayers(): Layer[] {
+    const selected = store.topLevelSelectedNodes();
+    if (selected.length > 0) {
+        const layers = selected.flatMap((node) => flattenLayers([node]));
+        if (layers.length > 0) {
+            return layers;
+        }
+    }
+    const active = store.activeLayer;
+    return active ? [active] : [];
+}
+
+// Union of the layers' visible content in document coordinates.
+function contentBoxOf(layers: Layer[]): Box | null {
+    let x0 = Infinity;
+    let y0 = Infinity;
+    let x1 = -Infinity;
+    let y1 = -Infinity;
+    for (const layer of layers) {
+        if (layer.image.width === 0 || layer.image.height === 0) {
+            continue;
+        }
+        const content = layerContentBounds(layer.image);
+        if (!content) {
+            continue;
+        }
+        x0 = Math.min(x0, layer.offsetX + content.x0);
+        y0 = Math.min(y0, layer.offsetY + content.y0);
+        x1 = Math.max(x1, layer.offsetX + content.x1);
+        y1 = Math.max(y1, layer.offsetY + content.y1);
+    }
+    if (x1 <= x0 || y1 <= y0) {
+        return null;
+    }
+    return boxFromBounds({ x0, y0, x1, y1 });
 }
 
 export function currentBox(): Box | null {
@@ -136,20 +185,12 @@ export function currentBox(): Box | null {
         if (bounds) {
             return boxFromBounds(bounds);
         }
-        // Without a selection the box frames the active layer's visible
-        // content, so its handles can scale/rotate just the drawn pixels.
-        const layer = store.activeLayer;
-        if (layer && layer.image.width > 0 && layer.image.height > 0) {
-            const content = layerContentBounds(layer.image);
-            if (content) {
-                return {
-                    cx: layer.offsetX + (content.x0 + content.x1) / 2,
-                    cy: layer.offsetY + (content.y0 + content.y1) / 2,
-                    w: content.x1 - content.x0,
-                    h: content.y1 - content.y0,
-                    rotation: 0,
-                };
-            }
+        // Without a selection the box frames the visible content of the layer
+        // (or of every selected layer), so its handles can scale/rotate just
+        // the drawn pixels.
+        const box = contentBoxOf(moveToolLayers());
+        if (box) {
+            return box;
         }
     }
     if (store.activeTool === 'resize' && store.width > 0) {
@@ -180,6 +221,7 @@ function liftToFloating(copy: boolean): boolean {
     store.pushHistory();
     store.replaceActiveLayer({ ...layer, image: result.cleared });
     floating = result.floating;
+    floatingParts = null;
     floatingMask = store.selection;
     floatingOriginCx = result.floating.cx;
     floatingOriginCy = result.floating.cy;
@@ -187,12 +229,11 @@ function liftToFloating(copy: boolean): boolean {
     return true;
 }
 
-// Lifts the whole active layer's visible content into a floating (Move tool
-// without a selection), so the box handles can scale/rotate it. With `copy`
-// the layer keeps its pixels.
-function liftWholeLayerToFloating(copy: boolean): boolean {
-    const layer = store.activeLayer;
-    if (!layer || store.width <= 0 || store.height <= 0) {
+// Lifts the whole layer's visible content into a floating (Move tool without a
+// selection), so the box handles can scale/rotate it. With `copy` the layer
+// keeps its pixels.
+function liftWholeLayerToFloating(layer: Layer, copy: boolean): boolean {
+    if (store.width <= 0 || store.height <= 0) {
         return false;
     }
     const content = layerContentBounds(layer.image);
@@ -222,12 +263,133 @@ function liftWholeLayerToFloating(copy: boolean): boolean {
     store.pushHistory();
     store.replaceActiveLayer({ ...layer, image: result.cleared });
     floating = result.floating;
+    floatingParts = null;
     floatingMask = null;
     floatingWholeLayer = true;
     floatingOriginCx = result.floating.cx;
     floatingOriginCy = result.floating.cy;
     store.notify();
     return true;
+}
+
+// Lifts the visible content of several layers into one floating (Move tool with
+// a multi-selection). Every layer keeps its own piece, so the transform is
+// written back into the original layers on commit instead of merging them.
+function liftLayersToFloating(layers: Layer[], copy: boolean): boolean {
+    if (layers.length < 2 || store.width <= 0 || store.height <= 0) {
+        return false;
+    }
+    const pieces: { layer: Layer; x0: number; y0: number; x1: number; y1: number }[] = [];
+    for (const layer of layers) {
+        if (layer.image.width === 0 || layer.image.height === 0) {
+            continue;
+        }
+        const content = layerContentBounds(layer.image);
+        if (!content) {
+            continue;
+        }
+        const x0 = Math.max(0, layer.offsetX + content.x0);
+        const y0 = Math.max(0, layer.offsetY + content.y0);
+        const x1 = Math.min(store.width, layer.offsetX + content.x1);
+        const y1 = Math.min(store.height, layer.offsetY + content.y1);
+        if (x1 <= x0 || y1 <= y0) {
+            continue;
+        }
+        pieces.push({ layer, x0, y0, x1, y1 });
+    }
+    if (pieces.length === 0) {
+        return false;
+    }
+    const ux0 = Math.min(...pieces.map((piece) => piece.x0));
+    const uy0 = Math.min(...pieces.map((piece) => piece.y0));
+    const ux1 = Math.max(...pieces.map((piece) => piece.x1));
+    const uy1 = Math.max(...pieces.map((piece) => piece.y1));
+    const unionW = ux1 - ux0;
+    const unionH = uy1 - uy0;
+    const cx = (ux0 + ux1) / 2;
+    const cy = (uy0 + uy1) / 2;
+
+    const bufferCanvas = document.createElement('canvas');
+    bufferCanvas.width = unionW;
+    bufferCanvas.height = unionH;
+    const bufferContext = bufferCanvas.getContext('2d')!;
+
+    const parts: { nodeId: number; part: FloatingPart }[] = [];
+    const cleared = new Map<number, ImageData>();
+    for (const piece of pieces) {
+        const mask = rectSelection(store.width, store.height, piece.x0, piece.y0, piece.x1 - 1, piece.y1 - 1);
+        const result = liftSelection(
+            piece.layer.image,
+            mask,
+            piece.layer.offsetX,
+            piece.layer.offsetY,
+            store.width,
+            store.height,
+            copy,
+        );
+        if (!result) {
+            continue;
+        }
+        parts.push({
+            nodeId: piece.layer.id,
+            part: {
+                buffer: result.floating.buffer,
+                localCx: (piece.x0 + piece.x1) / 2 - cx,
+                localCy: (piece.y0 + piece.y1) / 2 - cy,
+            },
+        });
+        if (!copy) {
+            cleared.set(piece.layer.id, result.cleared);
+        }
+        // The pieces share one transform, so the display buffer is simply all
+        // of them drawn at their original spots.
+        const pieceCanvas = document.createElement('canvas');
+        pieceCanvas.width = result.floating.buffer.width;
+        pieceCanvas.height = result.floating.buffer.height;
+        pieceCanvas.getContext('2d')!.putImageData(result.floating.buffer, 0, 0);
+        bufferContext.drawImage(pieceCanvas, piece.x0 - ux0, piece.y0 - uy0);
+    }
+    if (parts.length === 0) {
+        return false;
+    }
+
+    store.pushHistory();
+    for (const [id, image] of cleared) {
+        const layer = layers.find((entry) => entry.id === id);
+        if (layer) {
+            store.replaceLayer({ ...layer, image });
+        }
+    }
+    floating = {
+        buffer: bufferContext.getImageData(0, 0, unionW, unionH),
+        originW: unionW,
+        originH: unionH,
+        cx,
+        cy,
+        scaleX: 1,
+        scaleY: 1,
+        rotation: 0,
+    };
+    floatingParts = parts;
+    floatingMask = null;
+    floatingWholeLayer = true;
+    floatingOriginCx = cx;
+    floatingOriginCy = cy;
+    store.notify();
+    return true;
+}
+
+// Lifts whatever the Move tool acts on: all selected layers together, or the
+// single layer's content.
+function liftMoveTargetsToFloating(copy: boolean): boolean {
+    const layers = moveToolLayers();
+    if (layers.length === 0) {
+        return false;
+    }
+    if (layers.length === 1) {
+        return liftWholeLayerToFloating(layers[0], copy);
+    }
+    return liftLayersToFloating(layers, copy);
 }
 
 // Copies the selected pixels (or the floating selection) to the clipboard as a
@@ -357,14 +519,29 @@ export function commitFloating(): void {
     if (!floating) {
         return;
     }
-    const layer = store.activeLayer;
     const box = boxFromFloating(floating);
-    if (layer) {
-        const baked = bakeFloating(floating, store.width, store.height);
-        const target = createEmptyImage(store.width, store.height);
-        target.data.set(layer.image.data);
-        compositeOverLayer(target, baked, layer.offsetX, layer.offsetY);
-        store.replaceActiveLayer({ ...layer, image: target });
+    if (floatingParts) {
+        // Multi-layer float: every piece goes back into the layer it came from.
+        for (const { nodeId, part } of floatingParts) {
+            const layer = store.layers.find((entry) => entry.id === nodeId);
+            if (!layer) {
+                continue;
+            }
+            const baked = bakeFloatingPart(part, floating, store.width, store.height);
+            const target = createEmptyImage(store.width, store.height);
+            target.data.set(layer.image.data);
+            compositeOverLayer(target, baked, layer.offsetX, layer.offsetY);
+            store.replaceLayer({ ...layer, image: target });
+        }
+    } else {
+        const layer = store.activeLayer;
+        if (layer) {
+            const baked = bakeFloating(floating, store.width, store.height);
+            const target = createEmptyImage(store.width, store.height);
+            target.data.set(layer.image.data);
+            compositeOverLayer(target, baked, layer.offsetX, layer.offsetY);
+            store.replaceActiveLayer({ ...layer, image: target });
+        }
     }
     const transformed = floatingWholeLayer
         ? null
@@ -372,6 +549,7 @@ export function commitFloating(): void {
           ? transformMask(floatingMask, floatingOriginCx, floatingOriginCy, floating)
           : selectionForBox(box);
     floating = null;
+    floatingParts = null;
     floatingMask = null;
     floatingWholeLayer = false;
     store.selection = transformed;
@@ -383,6 +561,7 @@ export function cancelFloating(): void {
         return;
     }
     floating = null;
+    floatingParts = null;
     floatingMask = null;
     floatingWholeLayer = false;
     store.clearSelection();
@@ -390,10 +569,10 @@ export function cancelFloating(): void {
 }
 
 // Starts a transform drag on the box handle that was hit. Lifts the selection
-// (or, without one, the whole layer) into a floating first (`copy` keeps the
-// original pixels, for Alt-drag).
+// (or, without one, the layer or the selected layers) into a floating first
+// (`copy` keeps the original pixels, for Alt-drag).
 export function startTransformDrag(hit: Exclude<BoxHit, null>, pointX: number, pointY: number, copy: boolean): void {
-    if (!floating && !(store.selection ? liftToFloating(copy) : liftWholeLayerToFloating(copy))) {
+    if (!floating && !(store.selection ? liftToFloating(copy) : liftMoveTargetsToFloating(copy))) {
         return;
     }
     const active = currentBox()!;

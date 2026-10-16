@@ -26,7 +26,7 @@ export function openLayersPanel(ctx: AppContext, onClose?: () => void): DockPane
     const groupButton = button(
         'Group Layers',
         () => store.groupSelectedLayers(),
-        'Group the selected layers/groups (Ctrl+G; needs at least two selected)',
+        'Group the selected layers/groups (Ctrl+G; with only a group selected, Ctrl+G ungroups instead)',
     );
     const ungroupButton = button(
         'Ungroup',

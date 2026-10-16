@@ -409,11 +409,11 @@ export class Store {
         return this.activeLayer?.image ?? null;
     }
 
-    // Replaces the active layer node with an updated copy (same id), e.g. after
-    // a transform baked into its image. Callers are responsible for history.
-    replaceActiveLayer(layer: Layer): void {
-        const current = this.activeLayer;
-        if (!current) {
+    // Replaces a layer node with an updated copy (same id), e.g. after a
+    // transform baked into its image. Callers are responsible for history.
+    replaceLayer(layer: Layer): void {
+        const current = findNode(this.nodes, layer.id);
+        if (!current || !isLayer(current)) {
             return;
         }
         const parent = findParent(this.nodes, current.id);
@@ -423,6 +423,12 @@ export class Store {
             return;
         }
         list[index] = layer;
+    }
+
+    // Replaces the active layer node with an updated copy (same id), e.g. after
+    // a transform baked into its image. Callers are responsible for history.
+    replaceActiveLayer(layer: Layer): void {
+        this.replaceLayer(layer);
     }
 
     // The flattened document that is displayed and processed.

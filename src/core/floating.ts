@@ -355,6 +355,40 @@ export function bakeFloating(floating: Floating, width: number, height: number):
     return context.getImageData(0, 0, width, height);
 }
 
+// One lifted piece of a multi-layer floating: a layer's visible content with
+// its center relative to the floating's box center. Multi-layer floats keep one
+// piece per layer so each is baked back into the layer it came from.
+export interface FloatingPart {
+    buffer: ImageData;
+    localCx: number;
+    localCy: number;
+}
+
+// Renders one piece with the floating's translate/scale/rotate, as a
+// document-sized image ready to be composited over its layer.
+export function bakeFloatingPart(
+    part: FloatingPart,
+    floating: Floating,
+    width: number,
+    height: number,
+): ImageData {
+    const cos = Math.cos(floating.rotation);
+    const sin = Math.sin(floating.rotation);
+    const localX = part.localCx * floating.scaleX;
+    const localY = part.localCy * floating.scaleY;
+    const single: Floating = {
+        buffer: part.buffer,
+        originW: part.buffer.width,
+        originH: part.buffer.height,
+        cx: floating.cx + localX * cos - localY * sin,
+        cy: floating.cy + localX * sin + localY * cos,
+        scaleX: floating.scaleX,
+        scaleY: floating.scaleY,
+        rotation: floating.rotation,
+    };
+    return bakeFloating(single, width, height);
+}
+
 export function compositeOverLayer(
     layer: ImageData,
     overlay: ImageData,

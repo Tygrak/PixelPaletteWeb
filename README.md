@@ -99,6 +99,7 @@ less, otherwise 2).
 | Duplicate Layer | `Ctrl + D`          |
 | Merge Down (or merge the selected layers when several are selected) | `Ctrl + E` |
 | Group Selected Layers (needs two or more selected) | `Ctrl + G` |
+| Ungroup (same shortcut, with only a group selected) | `Ctrl + G` |
 
 ## Saving
 

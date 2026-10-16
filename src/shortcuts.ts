@@ -1,4 +1,5 @@
 import { store } from './appStore';
+import { isGroup } from './core/layers';
 import { cancelFloating, commitFloating, copySelectionToClipboard, isFloating } from './editor/floatingSelection';
 import { backspaceText, cancelText, commitText, isTextEditing, typeText } from './editor/textTool';
 import { ToolId, toolForShortcut } from './core/tools';
@@ -131,7 +132,14 @@ export function installShortcuts(hooks: ShortcutHooks): void {
         if (ctrl && event.key.toLowerCase() === 'g') {
             event.preventDefault();
             commitFloating();
-            store.groupSelectedLayers();
+            // With exactly one group selected Ctrl+G dissolves it (ungroup);
+            // otherwise it groups the selection as usual.
+            const targets = store.topLevelSelectedNodes();
+            if (targets.length === 1 && isGroup(targets[0])) {
+                store.ungroupSelectedLayers();
+            } else {
+                store.groupSelectedLayers();
+            }
             return;
         }
         if (ctrl && event.key.toLowerCase() === 'c') {

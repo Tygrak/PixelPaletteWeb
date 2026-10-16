@@ -44,6 +44,7 @@ import {
     endTransformDrag,
     getTransformDrag,
     isFloating,
+    moveToolLayers,
     startTransformDrag,
 } from './editor/floatingSelection';
 import { toolIcon } from './ui/icons';
@@ -463,7 +464,13 @@ let panLastX = 0;
 let panLastY = 0;
 let spaceHeld = false;
 
-let moving: { startClientX: number; startClientY: number; offsetX: number; offsetY: number } | null = null;
+let moving: {
+    startClientX: number;
+    startClientY: number;
+    dx: number;
+    dy: number;
+    layers: { id: number; offsetX: number; offsetY: number }[];
+} | null = null;
 let sampling = false;
 
 // Pre-rendered canvases used to preview a plain layer move without
@@ -490,38 +497,46 @@ function layersToCanvas(layers: Layer[]): HTMLCanvasElement | null {
     return imageToCanvas(compositeLayers(layers, store.width, store.height));
 }
 
-function buildMovePreview(): void {
-    const layer = store.activeLayer;
-    if (!layer) {
+function buildMovePreview(layers: Layer[]): void {
+    if (layers.length === 0) {
         movePreview = null;
         return;
     }
-    // Split the visible layers into those below and above the active one, so
-    // the preview can draw the layer at its dragged offset in between.
+    // Split the visible layers into those below and above the dragged ones, so
+    // the preview can draw the moving layers at their dragged position in
+    // between. Layers sandwiched between moving ones show as part of the group
+    // for the duration of the drag.
     const visible = flattenVisibleLayers(store.nodes);
-    const index = visible.findIndex((entry) => entry.id === layer.id);
-    const below = index >= 0 ? visible.slice(0, index) : visible;
-    const above = index >= 0 ? visible.slice(index + 1) : [];
+    const ids = new Set(layers.map((layer) => layer.id));
+    let first = -1;
+    let last = -1;
+    visible.forEach((layer, index) => {
+        if (ids.has(layer.id)) {
+            if (first < 0) {
+                first = index;
+            }
+            last = index;
+        }
+    });
+    const below = first >= 0 ? visible.slice(0, first) : visible;
+    const above = last >= 0 ? visible.slice(last + 1) : [];
     movePreview = {
         below: layersToCanvas(below),
         above: layersToCanvas(above),
-        layer: imageToCanvas(layer.image),
+        layer: imageToCanvas(compositeLayers(layers, store.width, store.height)),
     };
 }
 
 function drawMovePreview(): void {
-    const layer = store.activeLayer;
     const context = canvas.getContext('2d');
-    if (!movePreview || !layer || !context) {
+    if (!movePreview || !moving || !context) {
         return;
     }
     context.clearRect(0, 0, canvas.width, canvas.height);
     if (movePreview.below) {
         context.drawImage(movePreview.below, 0, 0);
     }
-    context.globalAlpha = layer.opacity;
-    context.drawImage(movePreview.layer, layer.offsetX, layer.offsetY);
-    context.globalAlpha = 1;
+    context.drawImage(movePreview.layer, moving.dx, moving.dy);
     if (movePreview.above) {
         context.drawImage(movePreview.above, 0, 0);
     }
@@ -545,20 +560,22 @@ function beginPan(event: PointerEvent): void {
 }
 
 function beginMoveInteraction(event: PointerEvent, pointX: number, pointY: number): void {
-    // Plain layer drag: offsets the active layer (with a cheap preview) and
-    // bakes the offset when the drag ends.
+    // Plain layer drag: offsets the moving layers (with a cheap preview) and
+    // bakes the offsets when the drag ends. With several layers selected they
+    // all move together.
+    const targets = moveToolLayers();
     const startLayerDrag = (): void => {
-        const layer = store.activeLayer;
-        if (!layer) {
+        if (targets.length === 0) {
             return;
         }
         store.pushHistory();
-        buildMovePreview();
+        buildMovePreview(targets);
         moving = {
             startClientX: event.clientX,
             startClientY: event.clientY,
-            offsetX: layer.offsetX,
-            offsetY: layer.offsetY,
+            dx: 0,
+            dy: 0,
+            layers: targets.map((layer) => ({ id: layer.id, offsetX: layer.offsetX, offsetY: layer.offsetY })),
         };
     };
 
@@ -589,14 +606,20 @@ function beginMoveInteraction(event: PointerEvent, pointX: number, pointY: numbe
     startTransformDrag(hit, pointX, pointY, event.altKey);
 }
 
-function bakeActiveLayerOffset(): void {
-    const layer = store.activeLayer;
-    if (!layer || (layer.offsetX === 0 && layer.offsetY === 0)) {
-        return;
+function bakeLayerOffsets(ids: number[]): void {
+    let changed = false;
+    for (const id of ids) {
+        const layer = store.layers.find((item) => item.id === id);
+        if (!layer || (layer.offsetX === 0 && layer.offsetY === 0)) {
+            continue;
+        }
+        const baked = offsetImage(layer.image, layer.offsetX, layer.offsetY);
+        store.replaceLayer({ ...layer, image: baked, offsetX: 0, offsetY: 0 });
+        changed = true;
     }
-    const baked = offsetImage(layer.image, layer.offsetX, layer.offsetY);
-    store.replaceActiveLayer({ ...layer, image: baked, offsetX: 0, offsetY: 0 });
-    store.notify();
+    if (changed) {
+        store.notify();
+    }
 }
 
 // Raw pen/touch pressure (0..1). A reported 0 is a real value (tablets often
@@ -914,18 +937,20 @@ canvas.addEventListener('pointermove', (event) => {
     }
 
     if (moving) {
-        const layer = store.activeLayer;
-        if (layer) {
-            const scale = currentScale(img) || 1;
-            const dx = (event.clientX - moving.startClientX) / scale;
-            const dy = (event.clientY - moving.startClientY) / scale;
-            const offsetX = Math.round(moving.offsetX + dx);
-            const offsetY = Math.round(moving.offsetY + dy);
-            if (offsetX !== layer.offsetX || offsetY !== layer.offsetY) {
-                store.replaceActiveLayer({ ...layer, offsetX, offsetY });
-                drawMovePreview();
-                redrawOverlay();
+        const scale = currentScale(img) || 1;
+        const dx = Math.round((event.clientX - moving.startClientX) / scale);
+        const dy = Math.round((event.clientY - moving.startClientY) / scale);
+        if (dx !== moving.dx || dy !== moving.dy) {
+            moving.dx = dx;
+            moving.dy = dy;
+            for (const entry of moving.layers) {
+                const layer = store.layers.find((item) => item.id === entry.id);
+                if (layer) {
+                    store.replaceLayer({ ...layer, offsetX: entry.offsetX + dx, offsetY: entry.offsetY + dy });
+                }
             }
+            drawMovePreview();
+            redrawOverlay();
         }
         return;
     }
@@ -976,9 +1001,10 @@ function endPointer(event: PointerEvent): void {
         finishSelectionDrag();
     }
     if (moving) {
+        const ids = moving.layers.map((entry) => entry.id);
         moving = null;
         movePreview = null;
-        bakeActiveLayerOffset();
+        bakeLayerOffsets(ids);
     }
     sampling = false;
     hideSamplePreview();

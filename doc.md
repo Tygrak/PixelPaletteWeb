@@ -162,7 +162,8 @@ always a real layer (clicking a group focuses its topmost layer). Drop rules:
 the row below (so gaps inside a group stay inside it), **above a group header**
 = above the group, and at the very bottom = below the last row. Groups can
 never be moved into themselves. Group Layers (Ctrl+G) wraps the selected nodes
-in a new group (needs two or more), Ungroup dissolves selected groups into
+in a new group (needs two or more); with exactly one group selected, Ctrl+G
+dissolves it (ungroups) instead. Ungroup dissolves selected groups into
 their parents, Merge Selected (Ctrl+E, also merges a single selected group)
 flattens selected nodes into one layer, and new layers/pastes go above the
 active layer in its own group.
@@ -267,10 +268,12 @@ pressure math live in `core/brushes.ts`:
 Other tools: the **Text** tool is an interactive session in `editor/textTool.ts`
 (in-progress string + caret, committed on Enter); `core/text.ts` rasterizes it
 and the result is applied through `ctx.applyImage`. The **Move** tool shows a
-transform box around the active layer's visible content (or the selection) at
-all times: dragging inside moves the layer/selection, the handles scale/rotate
+transform box around the selected layers' visible content (or the selection) at
+all times: dragging inside moves the layers/selection, the handles scale/rotate
 — with no selection the framed content is lifted into the floating transform
-when a handle is grabbed — and clicking outside commits. The **Resize Image**
+when a handle is grabbed — and clicking outside commits. With several layers
+selected in the Layers list (or a whole group selected) they move, scale and
+rotate together while keeping their own pixels. The **Resize Image**
 tool resizes the whole document via `store.resizeDocument`/`resizeCanvas`.
 
 ### Modifiers (`core/modifiers.ts`, `ui/modifiersPanel.ts`)
@@ -316,11 +319,15 @@ The in-progress drag (marquee/lasso outline, mode capture) lives in
 `editor/selectionDrag.ts` and only builds the real mask on release.
 
 `core/floating.ts` holds the floating bitmap + transform box math
-(`liftSelection`, `computeScale`, `bakeFloating`); `editor/floatingSelection.ts`
-tracks the live session (current floating, drag state, commit/cancel). The Move
-tool's box frames the selection when there is one, otherwise the active layer's
-visible content (its alpha bounding box); grabbing a handle lifts that content
-into the floating transform. `Enter` commits and `Escape` cancels.
+(`liftSelection`, `computeScale`, `bakeFloating`, `bakeFloatingPart`);
+`editor/floatingSelection.ts` tracks the live session (current floating, drag
+state, commit/cancel). The Move tool's box frames the selection when there is
+one, otherwise the visible content of the layers it acts on (the active layer,
+or every layer of a multi-selection); grabbing a handle lifts that content into
+the floating transform. A multi-layer float keeps one `FloatingPart` per layer
+and draws them as a single buffer, so scaling/rotating writes each layer's
+transformed pixels back into its own layer instead of merging them. `Enter`
+commits and `Escape` cancels.
 
 ## Animation (`ui/timeline.ts`, `core/store.ts`)
 
