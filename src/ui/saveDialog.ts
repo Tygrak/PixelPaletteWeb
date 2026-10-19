@@ -4,7 +4,7 @@
 // images, or a looping animated GIF, and remembers the last used options.
 // Every manual save also refreshes the recent-files auto-save.
 
-import { createDialog, h } from '../shared/dom';
+import { createDialog, h, rowHint } from '../shared/dom';
 import { downloadBlob, saveImageFile } from '../shared/files';
 import { exportAnimationGif } from '../core/gifExport';
 import { downloadProjectFile, encodeProject, PROJECT_EXTENSION } from '../core/project';
@@ -97,6 +97,19 @@ export function openSaveDialog(store: Store, fps: number): void {
         h('div', { class: 'row-controls' }, [columnsInput]),
     ]);
 
+    // "Separate file" (browser storage only) keeps the save as its own recent
+    // entry instead of updating the one this document is already stored under.
+    // It always starts disabled when the dialog opens: it can only be armed by
+    // choosing Browser storage in this dialog.
+    const separateCheckbox = document.createElement('input');
+    separateCheckbox.type = 'checkbox';
+    separateCheckbox.disabled = true;
+    const separateRow = rowHint(
+        'Separate file:',
+        'Keep this save as its own recent file instead of updating the entry this document is already stored under. Only applies to browser storage.',
+        separateCheckbox,
+    );
+
     const hint = h('div', { class: 'dialog-hint' });
 
     const updateHint = (): void => {
@@ -105,7 +118,9 @@ export function openSaveDialog(store: Store, fps: number): void {
         if (format === 'project') {
             hint.textContent = `Project with all layers, ${frameCount} frame(s) at ${frameW}×${frameH}, ${name}${PROJECT_EXTENSION}`;
         } else if (format === 'storage') {
-            hint.textContent = `Keeps a copy in this browser's recent files as "${name}"; no file is downloaded.`;
+            hint.textContent = separateCheckbox.checked
+                ? `Keeps a separate copy as "${name}" without touching the recent file this document is already stored under.`
+                : `Keeps a copy in this browser's recent files as "${name}"; no file is downloaded.`;
         } else if (format === 'separate') {
             hint.textContent = `Saves ${frameCount} file(s): ${name}_001.png …`;
         } else if (format === 'gif') {
@@ -127,7 +142,32 @@ export function openSaveDialog(store: Store, fps: number): void {
             format === 'project' ? PROJECT_EXTENSION : format === 'gif' ? '.gif' : '.png';
         updateHint();
     };
-    formatSelect.addEventListener('change', updateVisibility);
+
+    // The separate-file option only exists for browser storage: the row is
+    // shown for that format only, and its checkbox always starts disabled
+    // (arm: false when the dialog opens) so it can only be turned on by
+    // choosing Browser storage in this dialog.
+    const updateSeparateState = (arm = true): void => {
+        const applicable = (formatSelect.value as SaveFormat) === 'storage';
+        separateRow.style.display = applicable ? 'flex' : 'none';
+        if (!arm) {
+            return;
+        }
+        separateCheckbox.disabled = !applicable;
+        if (!applicable) {
+            separateCheckbox.checked = false;
+        }
+    };
+
+    formatSelect.addEventListener('change', () => {
+        updateSeparateState();
+        updateVisibility();
+    });
+    // A remembered "Browser storage" opens with the checkbox disabled; reaching
+    // the format control re-evaluates it, so the option can still be armed
+    // without switching away and back.
+    formatSelect.addEventListener('focus', () => updateSeparateState());
+    separateCheckbox.addEventListener('change', updateHint);
     columnsInput.addEventListener('input', updateHint);
     nameInput.addEventListener('input', updateHint);
 
@@ -145,9 +185,10 @@ export function openSaveDialog(store: Store, fps: number): void {
             if (format === 'storage') {
                 // Keep a project copy in the recent files without downloading.
                 const blob = encodeProject(store);
-                void autoSaveRecent(store, { force: true, name, blob, manual: true }).then((result) => {
+                const separate = separateCheckbox.checked;
+                void autoSaveRecent(store, { force: true, name, blob, manual: true, separate }).then((result) => {
                     if (result === 'saved') {
-                        flashStatus(store, 'Saved to browser storage');
+                        flashStatus(store, separate ? 'Saved as a separate recent file' : 'Saved to browser storage');
                     } else if (result === 'failed') {
                         store.setStatus('Could not save to browser storage');
                     }
@@ -189,12 +230,16 @@ export function openSaveDialog(store: Store, fps: number): void {
                 h('span', { class: 'row-label', text: 'File name' }),
                 h('div', { class: 'row-controls' }, [nameInput, extensionLabel]),
             ]),
+            separateRow,
             hint,
         ]),
     );
     // Save sits in the footer left of Cancel so both actions share one row.
     dialog.actions.prepend(saveButton);
     updateVisibility();
+    // Row visibility follows the remembered format, but the checkbox itself
+    // stays disabled until the format is picked in this dialog.
+    updateSeparateState(false);
     nameInput.focus();
     nameInput.select();
 }

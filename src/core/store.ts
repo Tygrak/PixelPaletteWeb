@@ -195,6 +195,9 @@ export class Store {
     // displayed order. Group/merge actions need two or more selected nodes.
     private nodeSelection = new Set<number>();
 
+    // True while consecutive Move-tool arrow-key nudges share one undo entry.
+    private nudging = false;
+
     get selectedNodeIds(): number[] {
         return [...this.nodeSelection];
     }
@@ -463,6 +466,7 @@ export class Store {
     }
 
     private applySnapshot(snapshot: Snapshot): void {
+        this.nudging = false;
         this.nodes = cloneNodes(snapshot.nodes);
         this.activeId = snapshot.activeId;
         this.width = snapshot.width;
@@ -493,6 +497,7 @@ export class Store {
     }
 
     pushHistory(): void {
+        this.nudging = false;
         if (this.layers.length === 0) {
             return;
         }
@@ -502,6 +507,17 @@ export class Store {
             frame.undo.shift();
         }
         frame.redo = [];
+    }
+
+    // History for a Move-tool arrow-key nudge: consecutive nudges reuse the
+    // first snapshot, so holding an arrow key cannot flood the capped undo
+    // history. Any other action (or an undo/redo) ends the group.
+    pushNudgeHistory(): void {
+        if (this.nudging) {
+            return;
+        }
+        this.pushHistory();
+        this.nudging = true;
     }
 
     undo(): void {

@@ -271,7 +271,12 @@ and the result is applied through `ctx.applyImage`. The **Move** tool shows a
 transform box around the selected layers' visible content (or the selection) at
 all times: dragging inside moves the layers/selection, the handles scale/rotate
 — with no selection the framed content is lifted into the floating transform
-when a handle is grabbed — and clicking outside commits. With several layers
+when a handle is grabbed — and clicking outside commits. While dragging a scale
+handle, `Shift` scales about the box center, `Alt` keeps the aspect ratio
+(`computeScale`'s `altKey`), and `Shift+Alt` does both. Arrow keys nudge the
+moving content one pixel at a time (Shift: ten pixels; with a pixel selection
+the first press lifts it, like a drag); `nudgeMove()` and
+`store.pushNudgeHistory()` keep a run of nudges in a single undo step. With several layers
 selected in the Layers list (or a whole group selected) they move, scale and
 rotate together while keeping their own pixels. The **Resize Image**
 tool resizes the whole document via `store.resizeDocument`/`resizeCanvas`.
@@ -363,7 +368,12 @@ The toolbar **Save File** button and `Ctrl + S` open the shared save dialog:
   and frame (see below),
 - **Browser storage (no download)** — keeps a project copy in the recent
   files without downloading anything; explicit storage saves run even while
-  automatic auto-saving is disabled in Settings,
+  automatic auto-saving is disabled in Settings. Its **Separate file**
+  checkbox (shown only for Browser storage, disabled until that format is
+  picked, and always disabled when the dialog opens) saves a brand-new recent
+  entry instead of updating the one the document is already stored under — the
+  session then continues in the new entry, so the previous recent file stays
+  untouched,
 - **Current frame**, **Sprite sheet (grid)** (configurable columns), or
   **Separate images** (`name_001.png`, …),
 - **Animated GIF** — offered in animation mode with more than one frame;
@@ -424,7 +434,11 @@ holding one project blob per entry) so work survives closing the site:
   with one — and are pinned to a fresh id (creation timestamp plus a random
   suffix) so they never overwrite one another; projects reopened from disk
   continue the existing entry with the same name, and recent tiles continue
-  their own entry; the list is trimmed to `settings.autoSaveCount`;
+  their own entry; the list is trimmed to `settings.autoSaveCount`. A save
+  with the save dialog's **Separate file** option
+  (`autoSaveRecent(..., { separate: true })`) skips all of that: it writes a
+  brand-new entry and re-pins the session to it, so the recent file the
+  document came from stays as it was;
 - safeguards: a project over `MAX_RECENT_BYTES` (40 MB) is never auto-saved,
   the kept copies together stay under a 6 x 40 MB budget, and failed writes
   drop the oldest entries and retry before giving up. The toolbar status line
@@ -457,8 +471,15 @@ sized down to the number of distinct colors found.
 
 All shortcuts are handled by `installShortcuts()` in `shortcuts.ts`. It ignores
 input while typing in a field, routes `Ctrl` combinations (undo/redo/save/
-copy/paste/new layer/duplicate/merge/group), and maps single keys to tools via
-`toolForShortcut()`. Space is context-sensitive: it pans (drag) normally, or
+copy/paste/new layer/duplicate/merge/group/rename), and maps single keys to
+tools via `toolForShortcut()`. `Ctrl+R` renames the active layer inline and
+replaces the browser's reload while a document is open: it uses the docked
+Layers panel's list when that panel is open (`renameActiveLayerInPanel()`) and
+the sidebar's mini list otherwise. Number keys pick palette colors (`1`-`9`,
+`0` = tenth); with `Shift` held while a brush-based tool is active they pick
+the same slot in the brush library (`digitIndex()` reads `event.code` so
+shifted main-row digits keep working). Space is context-sensitive: it pans
+(drag) normally, or
 toggles animation playback in animation mode. While the Text tool is editing, it
 handles Escape/Enter/Backspace/characters instead. `Delete`/`Backspace` clears
 the selection, or deletes the focused frame / focused layer: clicking a

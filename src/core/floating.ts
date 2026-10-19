@@ -245,14 +245,16 @@ export interface ScaleState {
 }
 
 // Computes the new box transform for a scale-handle drag.
-// Default (no Shift): the opposite edge/corner stays fixed and the dragged
+// Default (no modifier): the opposite edge/corner stays fixed and the dragged
 // side follows the pointer (non-proportional). Shift: scales about the center.
+// Alt: keeps the aspect ratio; Shift+Alt does both.
 export function computeScale(
     state: ScaleState,
     handle: string,
     pointerX: number,
     pointerY: number,
     shiftKey: boolean,
+    altKey = false,
     min = 0.02,
 ): { cx: number; cy: number; scaleX: number; scaleY: number } {
     const cos = Math.cos(state.rotation);
@@ -280,6 +282,20 @@ export function computeScale(
     }
     if (sideY !== 0) {
         scaleY = shiftKey ? (localY * sideY) / halfH : ((localY - anchorLocalStartY) * sideY) / originH;
+    }
+    if (altKey) {
+        // Proportional: one factor drives both axes so the aspect ratio holds.
+        // Corner handles take the larger of the two, edge handles copy the
+        // dragged axis onto the other one.
+        if (sideX !== 0 && sideY !== 0) {
+            const factor = Math.max(Math.abs(scaleX), Math.abs(scaleY));
+            scaleX = (scaleX < 0 ? -1 : 1) * factor;
+            scaleY = (scaleY < 0 ? -1 : 1) * factor;
+        } else if (sideX !== 0) {
+            scaleY = (scaleY < 0 ? -1 : 1) * Math.abs(scaleX);
+        } else {
+            scaleX = (scaleX < 0 ? -1 : 1) * Math.abs(scaleY);
+        }
     }
     if (Math.abs(scaleX) < min) scaleX = (scaleX < 0 ? -1 : 1) * min;
     if (Math.abs(scaleY) < min) scaleY = (scaleY < 0 ? -1 : 1) * min;

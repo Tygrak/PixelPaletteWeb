@@ -24,7 +24,10 @@ npm run preview  # serve the production build
 - **Selections:** marquee, lasso, magic wand, plus a floating transform for
   moving/scaling/rotating the selected pixels. The Move tool frames the layer's
   visible content the same way, so it can be scaled and rotated without a
-  selection.
+  selection; while scaling, `Shift` scales about the box center, `Alt` keeps
+  the aspect ratio, and `Shift + Alt` does both. With the Move tool selected,
+  the arrow keys nudge by one pixel — hold `Shift` for ten (consecutive nudges
+  undo together).
 - **Symmetry modifiers:** mirror or rotational guides that copy brush strokes
   and fills live; the guide can be dragged directly on the image.
 - **Palette lock modifier:** keep drawn pixels on the palette (hard, opaque
@@ -74,7 +77,10 @@ npm run preview  # serve the production build
 | Resize Image            | `R` |
 
 Change the brush size with `[` and `]` (step of 1 while the size is 10 or
-less, otherwise 2).
+less, otherwise 2). Number keys pick palette colors (`1`-`9`, `0` for the
+tenth); while a brush tool (Brush, Eraser, Clone, Heal, Knife) is active, hold
+`Shift` with a number to pick the same slot in the brush library instead
+(`Shift + 1` = Round, `Shift + 2` = Soft Round, ...).
 
 ## Editing shortcuts
 
@@ -100,13 +106,16 @@ less, otherwise 2).
 | Merge Down (or merge the selected layers when several are selected) | `Ctrl + E` |
 | Group Selected Layers (needs two or more selected) | `Ctrl + G` |
 | Ungroup (same shortcut, with only a group selected) | `Ctrl + G` |
+| Rename the active layer (inline, in the visible Layers list) | `Ctrl + R` |
 
 ## Saving
 
 **Save File** (`Ctrl + S`) offers several formats: a **project file**
 (`.pixelpalette`) that keeps every layer and frame (plus the palette, brush
 and modifier settings), **browser storage** (keeps a copy in the recent files
-without downloading anything), the current frame, a sprite sheet grid,
+without downloading anything; its **Separate file** checkbox keeps the save as
+its own recent file instead of updating the one the document is already stored
+under), the current frame, a sprite sheet grid,
 separate PNGs per frame, or — in animation mode with more than one frame — a
 looping **animated GIF** at the timeline FPS. The name field starts from the
 document's own name — new documents are "untitled" until saved with a name.

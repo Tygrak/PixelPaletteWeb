@@ -61,6 +61,10 @@ export interface AutoSaveOptions {
     // An explicit save requested by the user (Save dialog → Browser storage);
     // these run even while automatic auto-saving is disabled in Settings.
     manual?: boolean;
+    // Keep this save as its own entry instead of updating the session's (Save
+    // dialog → Browser storage → "separate file"). The session then continues
+    // in the new entry, so the previous recent file stays untouched.
+    separate?: boolean;
 }
 
 interface StoredData {
@@ -367,6 +371,12 @@ export async function autoSaveRecent(store: Store, options: AutoSaveOptions = {}
     const name = options.name?.trim();
     if (name) {
         sessionName = name;
+    }
+    // A "separate file" save pins the session to a brand-new entry, so this
+    // snapshot cannot overwrite the recent file the document came from; later
+    // auto-saves continue in the new entry.
+    if (options.separate) {
+        sessionId = createId();
     }
     const meta: RecentEntry = {
         id: resolveSessionId(),

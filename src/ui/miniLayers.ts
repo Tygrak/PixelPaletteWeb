@@ -10,6 +10,8 @@ import { createLayerList } from './layerList';
 export interface MiniLayers {
     root: HTMLElement;
     sync(): void;
+    // Starts the inline rename of the active layer (Ctrl+R).
+    renameActive(): void;
 }
 
 const WRAP = (inner: string): string =>
@@ -67,5 +69,5 @@ export function createMiniLayers(store: Store, isFullPanelOpen: () => boolean): 
         deleteButton.disabled = store.layers.length < 2;
     }
 
-    return { root, sync };
+    return { root, sync, renameActive: () => list.renameActive() };
 }

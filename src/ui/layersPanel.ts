@@ -3,11 +3,26 @@ import { button, createDockPanel, DockPanel, h } from '../shared/dom';
 import { isGroup } from '../core/layers';
 import { createLayerList } from './layerList';
 
+// The docked Layers panel is a singleton (ui/panels.ts keeps one open at a
+// time), so Ctrl+R renames through this when the panel is open and through the
+// mini list otherwise.
+let renameActiveInPanel: (() => void) | null = null;
+
+// Starts the inline rename in the docked Layers panel; false when it is closed.
+export function renameActiveLayerInPanel(): boolean {
+    if (!renameActiveInPanel) {
+        return false;
+    }
+    renameActiveInPanel();
+    return true;
+}
+
 export function openLayersPanel(ctx: AppContext, onClose?: () => void): DockPanel {
     const { store } = ctx;
     let unlisten: (() => void) | null = null;
     const panel = createDockPanel(ctx.dock, 'Layers', () => {
         unlisten?.();
+        renameActiveInPanel = null;
         onClose?.();
     });
 
@@ -52,7 +67,7 @@ export function openLayersPanel(ctx: AppContext, onClose?: () => void): DockPane
             h('div', { class: 'button-row' }, [
                 button('New Layer', () => store.addLayer(), 'New Layer (Ctrl+N)'),
                 button('Duplicate Layer', () => store.duplicateLayer(), 'Duplicate the selected layers/groups (Ctrl+D)'),
-                button('Rename Layer', () => list.renameActive()),
+                button('Rename Layer', () => list.renameActive(), 'Rename the active layer (Ctrl+R)'),
                 button('Merge Down', () => store.mergeLayers(), 'Merge the active layer down (Ctrl+E)'),
                 mergeSelectedButton,
                 groupButton,
@@ -68,6 +83,8 @@ export function openLayersPanel(ctx: AppContext, onClose?: () => void): DockPane
         list.sync();
         syncButtons();
     });
+    // Ctrl+R: rename the active layer here while this panel is open.
+    renameActiveInPanel = () => list.renameActive();
 
     return panel;
 }

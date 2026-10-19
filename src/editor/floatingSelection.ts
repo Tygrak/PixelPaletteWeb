@@ -16,7 +16,7 @@ import {
     selectionBounds,
 } from '../core/floating';
 import { flattenLayers, Layer } from '../core/layers';
-import { createEmptyImage } from '../shared/image';
+import { createEmptyImage, offsetImage } from '../shared/image';
 import { rectSelection, Selection } from '../core/selection';
 
 // Floating selection: pixels lifted off the active layer that can be moved,
@@ -392,6 +392,30 @@ function liftMoveTargetsToFloating(copy: boolean): boolean {
     return liftLayersToFloating(layers, copy);
 }
 
+// Arrow-key nudge for the Move tool: moves by one pixel at a time. A floating
+// (or the selected pixels, which are lifted first) moves with its box;
+// otherwise the layers the tool acts on are shifted.
+export function nudgeMove(dx: number, dy: number): void {
+    if (!floating && store.selection) {
+        liftToFloating(false);
+    }
+    if (floating) {
+        floating.cx += dx;
+        floating.cy += dy;
+        store.notify();
+        return;
+    }
+    const layers = moveToolLayers();
+    if (layers.length === 0) {
+        return;
+    }
+    store.pushNudgeHistory();
+    for (const layer of layers) {
+        store.replaceLayer({ ...layer, image: offsetImage(layer.image, dx, dy) });
+    }
+    store.notify();
+}
+
 // Copies the selected pixels (or the floating selection) to the clipboard as a
 // PNG. Returns false if there is nothing selected or the clipboard API is
 // unavailable.
@@ -590,7 +614,7 @@ export function startTransformDrag(hit: Exclude<BoxHit, null>, pointX: number, p
     };
 }
 
-export function applyTransform(x: number, y: number, shiftKey: boolean): void {
+export function applyTransform(x: number, y: number, shiftKey: boolean, altKey = false): void {
     if (!transformDrag || !floating) {
         return;
     }
@@ -619,6 +643,7 @@ export function applyTransform(x: number, y: number, shiftKey: boolean): void {
         x,
         y,
         shiftKey,
+        altKey,
     );
     floating.cx = scaled.cx;
     floating.cy = scaled.cy;

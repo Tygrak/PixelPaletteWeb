@@ -75,6 +75,7 @@ import {
 import { installShortcuts } from './shortcuts';
 import { commitText, initTextTool, isTextEditing, startText } from './editor/textTool';
 import { TOOLS, ToolId, floodFill } from './core/tools';
+import { renameActiveLayerInPanel } from './ui/layersPanel';
 import { createMiniLayers, MiniLayers } from './ui/miniLayers';
 import { openNewFileDialog } from './ui/newFileDialog';
 import { openFileDialog } from './ui/openFileDialog';
@@ -899,7 +900,7 @@ canvas.addEventListener('pointermove', (event) => {
 
     const transform = getTransformDrag();
     if (transform && isFloating()) {
-        applyTransform(point.x, point.y, event.shiftKey);
+        applyTransform(point.x, point.y, event.shiftKey, event.altKey);
         redrawOverlay();
         canvas.style.cursor = transform.mode === 'move' ? 'grabbing' : cursorForHit(transform.handle) ?? '';
         return;
@@ -1106,6 +1107,13 @@ installShortcuts({
     },
     setSpaceHeld: (held) => {
         spaceHeld = held;
+    },
+    renameLayer: () => {
+        // Rename in the docked Layers panel when it is open, otherwise in the
+        // sidebar's compact list (the only one visible then).
+        if (!renameActiveLayerInPanel()) {
+            miniLayers?.renameActive();
+        }
     },
 });
 

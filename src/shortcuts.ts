@@ -1,6 +1,8 @@
 import { store } from './appStore';
+import { allBrushes } from './core/brushLibrary';
 import { isGroup } from './core/layers';
-import { cancelFloating, commitFloating, copySelectionToClipboard, isFloating } from './editor/floatingSelection';
+import { cancelFloating, commitFloating, copySelectionToClipboard, isFloating, nudgeMove } from './editor/floatingSelection';
+import { isBrushTool } from './editor/paint';
 import { backspaceText, cancelText, commitText, isTextEditing, typeText } from './editor/textTool';
 import { ToolId, toolForShortcut } from './core/tools';
 import { Timeline } from './ui/timeline';
@@ -8,12 +10,33 @@ import { Timeline } from './ui/timeline';
 // Global keyboard shortcuts. Actions that belong to the app wiring (saving,
 // tool selection, playback, space-pan state) are injected via hooks.
 
+// Arrow-key nudges for the Move tool (one pixel per press).
+const ARROW_STEPS: Record<string, [number, number] | undefined> = {
+    ArrowLeft: [-1, 0],
+    ArrowRight: [1, 0],
+    ArrowUp: [0, -1],
+    ArrowDown: [0, 1],
+};
+
+// Position of a digit key press (1-9, 0 = tenth), or -1. Reads `code` so the
+// main-row digits keep working with Shift held (where `key` becomes '!' etc.).
+function digitIndex(event: KeyboardEvent): number {
+    const match = /^Digit([0-9])$/.exec(event.code);
+    const digit = match?.[1] ?? (/^[0-9]$/.test(event.key) ? event.key : null);
+    if (digit === null) {
+        return -1;
+    }
+    return digit === '0' ? 9 : Number(digit) - 1;
+}
+
 export interface ShortcutHooks {
     saveDocument(): void;
     selectTool(tool: ToolId): void;
     getTimeline(): Timeline | null;
     clearSymmetryDrag(): void;
     setSpaceHeld(held: boolean): void;
+    // Starts the inline rename of the active layer (Ctrl+R).
+    renameLayer(): void;
 }
 
 export function installShortcuts(hooks: ShortcutHooks): void {
@@ -85,6 +108,17 @@ export function installShortcuts(hooks: ShortcutHooks): void {
             // Match the toolbar Save button instead of the browser's "Save page".
             event.preventDefault();
             hooks.saveDocument();
+            return;
+        }
+        if (ctrl && event.key.toLowerCase() === 'r' && !event.shiftKey) {
+            // Rename the active layer instead of reloading the page while a
+            // document is open (the mini list or the Layers panel starts the
+            // inline rename).
+            if (store.current === null) {
+                return;
+            }
+            event.preventDefault();
+            hooks.renameLayer();
             return;
         }
         if (ctrl && event.key.toLowerCase() === 'z') {
@@ -166,12 +200,34 @@ export function installShortcuts(hooks: ShortcutHooks): void {
         if (typing || ctrl) {
             return;
         }
-        // Number keys pick palette colors: 1-9 select the first nine entries, 0 the tenth.
-        const paletteIndex = event.key >= '0' && event.key <= '9' ? (event.key === '0' ? 9 : Number(event.key) - 1) : -1;
-        if (paletteIndex >= 0 && paletteIndex < store.palette.length) {
-            event.preventDefault();
-            store.setForeground(store.palette[paletteIndex]);
-            return;
+        // Move tool: arrow keys nudge the moving content; Shift moves ten
+        // pixels per press.
+        if (store.activeTool === 'move' && !event.altKey) {
+            const step = ARROW_STEPS[event.key];
+            if (step) {
+                event.preventDefault();
+                const distance = event.shiftKey ? 10 : 1;
+                nudgeMove(step[0] * distance, step[1] * distance);
+                return;
+            }
+        }
+        // Number keys pick palette colors (1-9, 0 = tenth); with Shift they pick
+        // a brush from the library instead, while a brush tool is active.
+        const digit = digitIndex(event);
+        if (digit >= 0) {
+            if (event.shiftKey && isBrushTool(store.activeTool)) {
+                const brushes = allBrushes();
+                if (digit < brushes.length) {
+                    event.preventDefault();
+                    store.setBrush(brushes[digit].id);
+                    return;
+                }
+            }
+            if (!event.shiftKey && digit < store.palette.length) {
+                event.preventDefault();
+                store.setForeground(store.palette[digit]);
+                return;
+            }
         }
         if (event.key === 'Delete' || event.key === 'Backspace') {
             // With a timeline frame focused (last click was on the frame
