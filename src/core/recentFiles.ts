@@ -25,8 +25,9 @@ export const AUTOSAVE_INTERVAL_MS = 2 * 60 * 1000;
 
 // Largest single auto-save.
 export const MAX_RECENT_BYTES = 40 * 1024 * 1024;
-// Budget for all kept auto-saves together: the default count of six files at
-// their maximum size. Older files are dropped first.
+// Budget for all kept auto-saves together (an independent safety cap, not tied
+// to the configured count: typical documents are far smaller). Older files are
+// dropped first.
 const MAX_TOTAL_BYTES = 6 * MAX_RECENT_BYTES;
 
 export interface RecentEntry {

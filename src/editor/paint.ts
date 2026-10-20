@@ -21,6 +21,12 @@ let strokeSource: ImageData | null = null;
 let strokeKind: StrokeKind = 'brush';
 let strokeLastX = 0;
 let strokeLastY = 0;
+let lastPaintPoint: { x: number; y: number } | null = null;
+// While Shift is held during a stroke, motion is locked to one axis through
+// the point where the constraint started (the last painted point), so pressing
+// Shift mid-stroke never makes the brush jump. `horizontal` stays null until
+// the first movement picks the axis.
+let strokeAxis: { x: number; y: number; horizontal: boolean | null } | null = null;
 // Symmetry copies for the current stroke (null when the modifier is off).
 let strokeTransforms: SymmetryTransform[] | null = null;
 // Texture is sampled in stroke space, so a stroke tracks its own arc length,
@@ -59,6 +65,12 @@ export function isBrushTool(tool: ToolId): boolean {
 
 export function hasActiveStroke(): boolean {
     return strokeImage !== null;
+}
+
+// The end of the most recent stroke (document space), used by Shift+click to
+// continue from there with a straight line. Null before the first stroke.
+export function getLastPaintPoint(): { x: number; y: number } | null {
+    return lastPaintPoint;
 }
 
 export function getCloneSource(): { x: number; y: number } | null {
@@ -122,6 +134,8 @@ function startStroke(kind: StrokeKind, source: ImageData | null, image: ImageDat
     strokeImage = image;
     strokeLastX = x;
     strokeLastY = y;
+    strokeAxis = null;
+    lastPaintPoint = { x, y };
     const brushLike = kind === 'brush' || kind === 'eraser';
     beginStrokeState(brushLike && textureModulates(store.brush.texture), image);
     // Wait for a real pressure reading before painting the first stamp. Some
@@ -156,7 +170,26 @@ export function startKnifeStroke(image: ImageData, x: number, y: number, pressur
     startStroke('knife', null, image, x, y, pressure);
 }
 
-export function continueStroke(x: number, y: number, pressure: number): void {
+export function continueStroke(x: number, y: number, pressure: number, straight = false): void {
+    if (straight) {
+        // Lock onto an axis through the last painted point (not the stroke
+        // start), so pressing Shift mid-stroke never jumps the brush. The axis
+        // is chosen once from the movement: side to side or up and down.
+        strokeAxis ??= { x: strokeLastX, y: strokeLastY, horizontal: null };
+        const dx = x - strokeAxis.x;
+        const dy = y - strokeAxis.y;
+        if (strokeAxis.horizontal === null && (dx !== 0 || dy !== 0)) {
+            strokeAxis.horizontal = Math.abs(dx) >= Math.abs(dy);
+        }
+        if (strokeAxis.horizontal === true) {
+            y = strokeAxis.y;
+        } else if (strokeAxis.horizontal === false) {
+            x = strokeAxis.x;
+        }
+    } else {
+        // Releasing Shift resumes freehand from the constrained position.
+        strokeAxis = null;
+    }
     if (strokePending) {
         if (pressure <= 0) {
             strokePendingMoves++;
@@ -175,6 +208,7 @@ export function continueStroke(x: number, y: number, pressure: number): void {
     paintStrokeSegment(strokeLastX, strokeLastY, x, y, pressure);
     strokeLastX = x;
     strokeLastY = y;
+    lastPaintPoint = { x, y };
 }
 
 export function endStroke(): void {
@@ -195,6 +229,7 @@ export function endStroke(): void {
     strokeSource = null;
     strokeMask = null;
     strokeBase = null;
+    strokeAxis = null;
     store.emit();
 }
 

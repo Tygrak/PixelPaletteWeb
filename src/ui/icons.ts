@@ -30,6 +30,9 @@ const ICONS: Record<ToolId, string> = {
     marquee: WRAP('<rect x="4" y="4" width="16" height="16" rx="1" stroke-dasharray="3 3"/>'),
     eyedropper: WRAP('<path d="M18.5 3.5a2.1 2.1 0 0 1 3 3l-2.2 2.2 1 1-2 2-1-1L8 20l-4 1 1-4 9.3-9.3-1-1 2-2 1 1z"/>'),
     text: WRAP('<path d="M5 6V4h14v2"/><path d="M12 4v16"/><path d="M9 20h6"/>'),
+    measure: WRAP(
+        '<rect x="2.5" y="8" width="19" height="8" rx="1"/><path d="M6 16v-3.5M9.5 16v-5M13 16v-3.5M16.5 16v-5"/>',
+    ),
     resize: WRAP('<path d="M15 3h6v6"/><path d="M9 21H3v-6"/><path d="M21 3l-7 7"/><path d="M3 21l7-7"/>'),
 };
 

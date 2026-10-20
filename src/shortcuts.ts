@@ -2,6 +2,7 @@ import { store } from './appStore';
 import { allBrushes } from './core/brushLibrary';
 import { isGroup } from './core/layers';
 import { cancelFloating, commitFloating, copySelectionToClipboard, isFloating, nudgeMove } from './editor/floatingSelection';
+import { clearMeasurement } from './editor/measure';
 import { isBrushTool } from './editor/paint';
 import { backspaceText, cancelText, commitText, isTextEditing, typeText } from './editor/textTool';
 import { ToolId, toolForShortcut } from './core/tools';
@@ -260,6 +261,8 @@ export function installShortcuts(hooks: ShortcutHooks): void {
                 hooks.clearSymmetryDrag();
             } else if (isFloating()) {
                 cancelFloating();
+            } else if (store.activeTool === 'measure' && clearMeasurement()) {
+                store.emit();
             } else {
                 store.clearSelection();
             }

@@ -39,12 +39,12 @@ export const DEFAULT_SETTINGS: Settings = {
     saveFormat: 'current',
     saveColumns: 0,
     autoSaveRecent: true,
-    autoSaveCount: 6,
+    autoSaveCount: 20,
 };
 
 // Bounds for settings.autoSaveCount.
 export const AUTO_SAVE_MIN = 1;
-export const AUTO_SAVE_MAX = 10;
+export const AUTO_SAVE_MAX = 50;
 
 export function loadSettings(): Settings {
     try {

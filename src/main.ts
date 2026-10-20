@@ -55,6 +55,7 @@ import {
     continueStroke,
     endStroke,
     getCloneSource,
+    getLastPaintPoint,
     hasActiveStroke,
     isBrushTool,
     setCloneSource,
@@ -73,6 +74,7 @@ import {
     updateSelectionDrag,
 } from './editor/selectionDrag';
 import { installShortcuts } from './shortcuts';
+import { beginMeasure, clearMeasurement, endMeasure, isMeasuring, updateMeasure } from './editor/measure';
 import { commitText, initTextTool, isTextEditing, startText } from './editor/textTool';
 import { TOOLS, ToolId, floodFill } from './core/tools';
 import { renameActiveLayerInPanel } from './ui/layersPanel';
@@ -126,6 +128,7 @@ function generateAutoPalette(image: ImageData): void {
 
 function openDocument(image: ImageData, refreshPalette = false): void {
     commitFloating();
+    clearMeasurement();
     const hadDocument = store.current !== null;
     // The palette is finalized before the document opens so the store records
     // it as the document's initial palette (the Restore target).
@@ -155,6 +158,7 @@ function newDocument(width?: number, height?: number): void {
         return;
     }
     commitFloating();
+    clearMeasurement();
     const w = Math.max(1, width ?? store.settings.canvasWidth);
     const h = Math.max(1, height ?? store.settings.canvasHeight);
     const background = store.settings.blankNewImage ? null : hexToColor(store.settings.backgroundColor);
@@ -173,6 +177,7 @@ async function loadProject(source: Blob, name: string, recentId?: string): Promi
         return;
     }
     commitFloating();
+    clearMeasurement();
     store.working = true;
     store.setStatus('Opening project');
     let message = '';
@@ -646,6 +651,10 @@ function updateHoverCursor(x: number, y: number): void {
         canvas.style.cursor = 'text';
         return;
     }
+    if (tool === 'measure') {
+        canvas.style.cursor = 'crosshair';
+        return;
+    }
     if (tool !== 'move' && tool !== 'resize') {
         canvas.style.cursor = '';
         return;
@@ -722,7 +731,17 @@ canvas.addEventListener('pointerdown', (event) => {
                 break;
             }
             const pressure = pointerPressure(event);
-            startBrushStroke(tool === 'eraser' ? 'eraser' : 'brush', image, point.x, point.y, pressure);
+            const kind = tool === 'eraser' ? 'eraser' : 'brush';
+            const last = getLastPaintPoint();
+            if (event.shiftKey && last) {
+                // Shift+click: straight line from the previous stroke's end to
+                // the clicked point (a single, finished stroke).
+                startBrushStroke(kind, image, last.x, last.y, pressure);
+                continueStroke(point.x, point.y, pressure);
+                endStroke();
+                break;
+            }
+            startBrushStroke(kind, image, point.x, point.y, pressure);
             break;
         }
         case 'clone': {
@@ -827,6 +846,11 @@ canvas.addEventListener('pointerdown', (event) => {
             canvas.style.cursor = 'text';
             break;
         }
+        case 'measure': {
+            beginMeasure(clamp(point.x, 0, store.width), clamp(point.y, 0, store.height));
+            redrawOverlay();
+            break;
+        }
         case 'resize': {
             const box = currentBox();
             if (box) {
@@ -885,9 +909,15 @@ canvas.addEventListener('pointermove', (event) => {
         return;
     }
 
+    if (isMeasuring()) {
+        updateMeasure(clamp(point.x, 0, store.width), clamp(point.y, 0, store.height), event.shiftKey);
+        redrawOverlay();
+        return;
+    }
+
     if (hasActiveStroke()) {
         const pressure = pointerPressure(event);
-        continueStroke(point.x, point.y, pressure);
+        continueStroke(point.x, point.y, pressure, event.shiftKey);
         return;
     }
 
@@ -997,6 +1027,14 @@ function endPointer(event: PointerEvent): void {
     }
     if (hasActiveStroke()) {
         endStroke();
+    }
+    if (isMeasuring()) {
+        // Use the release position for the final measurement, then keep it on
+        // screen until the next drag (or Escape).
+        const point = toImagePoint(event.clientX, event.clientY);
+        updateMeasure(clamp(point.x, 0, store.width), clamp(point.y, 0, store.height), event.shiftKey);
+        endMeasure();
+        redrawOverlay();
     }
     if (isSelecting()) {
         finishSelectionDrag();

@@ -4,8 +4,5 @@
 -make the magic wand tool icon look more like a wand
 
 -make opacity slider for layers/groups
--make measure tool which tells you distance in pixels
--make shift click (or whatever it is in photoshop) with brush tool make straight line from last position to clicked position. also make shift hold while drawing do straight lines
--make recent file default limit 20
 -make a drop shadow effect (all non transparent pixels cast a shadow of custom color, maybe something so its more transparent at the edge)
 -maybe combine effects+adjustments into one tab (named adjustments)

@@ -17,7 +17,13 @@ npm run preview  # serve the production build
 ## Features
 
 - **Painting:** brush, eraser, clone stamp, spot healing, palette knife, paint
-  bucket, and text.
+  bucket, and text. `Shift+click` with the brush or eraser continues from the
+  previous stroke's end with a straight line, and holding `Shift` mid-stroke
+  locks the brush to a horizontal or vertical line from the point where Shift
+  was pressed (releasing it resumes freehand, with no jump).
+- **Measure tool:** drag on the canvas to measure the distance between two
+  points; the line stays visible (with a pixel distance label) until the next
+  measurement or `Esc`. Hold `Shift` to snap the line to 45° increments.
 - **Brush library:** built-in brushes plus per-brush editing (tip, pressure
   curves, textures) with duplicate and custom brushes under Settings → Brush
   settings.
@@ -48,7 +54,7 @@ npm run preview  # serve the production build
 - **Project files:** save the whole session — every layer, frame and the
   palette — as a `.pixelpalette` file and reopen it later, instead of only
   exporting flattened images.
-- **Auto-saved recent files:** the last few documents you worked on are kept
+- **Auto-saved recent files:** the last 20 documents you worked on are kept
   in the browser automatically (also when you save normally) and shown as
   tiles on the start screen when no file is open. Configurable and toggleable
   in Settings; files larger than 40 MB are skipped.
@@ -74,6 +80,7 @@ npm run preview  # serve the production build
 | Marquee Selection       | `M` |
 | Eyedropper              | `I` |
 | Text                    | `T` |
+| Measure                 | `U` |
 | Resize Image            | `R` |
 
 Change the brush size with `[` and `]` (step of 1 while the size is 10 or
@@ -124,10 +131,10 @@ your computer, paste an image from the clipboard, accept a
 dragged-and-dropped file, or load one of the recent auto-saves it lists.
 Images can also be dropped anywhere on the start screen.
 
-Independently of that, the app auto-saves your last few documents into the
+Independently of that, the app auto-saves your last 20 documents into the
 browser's storage every couple of minutes and whenever you save. They are
 shown as tiles on the start screen while no file is open. This can be turned
-off, and the number of kept files changed, under
+off, and the number of kept files changed (1–50, default 20), under
 **Settings → Auto-save recent files**; documents larger than 40 MB are skipped
 by design.
 

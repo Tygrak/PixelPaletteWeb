@@ -244,9 +244,14 @@ Painting tools (brush, eraser, clone, heal, knife) share a stroke session in
 
 - `pointerdown` calls `store.beginPaint()` to get a mutable clone of the active
   layer, then starts the session (`startBrushStroke` / `startCloneStroke` /
-  `startHealStroke` / `startKnifeStroke`).
-- `pointermove` calls `continueStroke(x, y, pressure)`, which interpolates
-  stamps with `forEachStamp()` and dispatches to the right per-stamp routine.
+  `startHealStroke` / `startKnifeStroke`). For brush/eraser, `Shift+click`
+  starts at the previous stroke's end (`getLastPaintPoint()`) and paints one
+  straight line to the clicked point instead of a new dot.
+- `pointermove` calls `continueStroke(x, y, pressure, event.shiftKey)`, which
+  interpolates stamps with `forEachStamp()` and dispatches to the right
+  per-stamp routine. While Shift is held the stroke locks onto the horizontal
+  or vertical axis through the point where Shift was pressed (never a jump),
+  and releasing Shift resumes freehand from there.
 - The affected rectangles are merged and flushed at most once per animation
   frame (`schedulePaintUpdate()` / `flushPaintUpdate()` → `store.notifyAreas()`);
   `pointerup` calls `endStroke()` to flush what is left.
@@ -267,7 +272,15 @@ pressure math live in `core/brushes.ts`:
 
 Other tools: the **Text** tool is an interactive session in `editor/textTool.ts`
 (in-progress string + caret, committed on Enter); `core/text.ts` rasterizes it
-and the result is applied through `ctx.applyImage`. The **Move** tool shows a
+and the result is applied through `ctx.applyImage`. The **Measure** tool
+(`editor/measure.ts` holds the points) renders its line, endpoint dots and
+`.measure-label` distance readout as DOM elements inside the canvas stack
+(`redrawOverlay()` positions them from the displayed scale), so they stay
+screen-sized and crisp at any zoom — canvas drawing would be magnified and
+pixelated by the document-resolution overlay. Drag from one point to another,
+the measurement stays visible while the tool is active, holding Shift snaps the
+line to 45° increments, and Escape clears it (points are clamped to the
+document). The **Move** tool shows a
 transform box around the selected layers' visible content (or the selection) at
 all times: dragging inside moves the layers/selection, the handles scale/rotate
 — with no selection the framed content is lifted into the floating transform
@@ -422,7 +435,8 @@ history; animation mode is enabled automatically for multi-frame projects).
 The same encoder backs the downloads and the recent-files auto-save, so the
 two can never drift apart.
 
-`core/recentFiles.ts` keeps the last few documents in IndexedDB
+`core/recentFiles.ts` keeps the last documents (default 20, configurable
+1–50) in IndexedDB
 (`pixelpalette-recents` database with a small `meta` store and a `data` store
 holding one project blob per entry) so work survives closing the site:
 

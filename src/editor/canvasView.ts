@@ -6,6 +6,7 @@ import { drawBoxToContext, drawFloatingToContext } from '../core/floating';
 import { currentBox, getFloating, selectionBoundsCached } from './floatingSelection';
 import { getPixel } from '../shared/image';
 import { drawSymmetryToContext } from '../core/modifiers';
+import { getMeasurement, measurementDistance } from './measure';
 import { getCloneMarker, isBrushTool } from './paint';
 import { selectionOverlay } from '../core/selection';
 import { getSelectionDrag } from './selectionDrag';
@@ -20,7 +21,20 @@ import { getActiveColorPicker } from '../ui/selectColor';
 
 export const canvas = h('canvas', { class: 'main-canvas' });
 const overlayCanvas = h('canvas', { class: 'overlay-canvas' });
-const canvasStack = h('div', { class: 'canvas-stack' }, [canvas, overlayCanvas]);
+// Measure graphics are DOM elements (line, endpoint dots, distance label) so
+// they stay crisp and screen-sized at any zoom — the overlay canvas is
+// document-resolution and pixelated when scaled up.
+const measureLine = h('div', { class: 'measure-line' });
+const measureStartDot = h('div', { class: 'measure-dot' });
+const measureEndDot = h('div', { class: 'measure-dot' });
+const measureLabel = h('div', { class: 'measure-label' });
+const measureLayer = h('div', { class: 'measure-layer' }, [
+    measureLine,
+    measureStartDot,
+    measureEndDot,
+    measureLabel,
+]);
+const canvasStack = h('div', { class: 'canvas-stack' }, [canvas, overlayCanvas, measureLayer]);
 // Filled by the app wiring with the start screen (quick actions + recent
 // files) while no document is open.
 export const canvasPlaceholder = h('div', { class: 'placeholder' });
@@ -471,6 +485,28 @@ export function redrawOverlay(): void {
     if (box) {
         // Thicken the box lines when zoomed out so they do not disappear.
         drawBoxToContext(context, box, handleHalfSize(), Math.max(1, 1 / Math.max(displayScale(), 0.02)));
+    }
+    const measurement = store.activeTool === 'measure' && store.width > 0 && store.height > 0 ? getMeasurement() : null;
+    if (measurement) {
+        // Screen positions come from the displayed scale so the line, dots and
+        // label keep their on-screen size at every zoom level.
+        const scale = displayScale();
+        const length = Math.hypot(measurement.endX - measurement.startX, measurement.endY - measurement.startY);
+        const angle = Math.atan2(measurement.endY - measurement.startY, measurement.endX - measurement.startX);
+        measureLine.style.left = `${measurement.startX * scale}px`;
+        measureLine.style.top = `${measurement.startY * scale}px`;
+        measureLine.style.width = `${length * scale}px`;
+        measureLine.style.transform = `rotate(${angle}rad)`;
+        measureStartDot.style.left = `${measurement.startX * scale}px`;
+        measureStartDot.style.top = `${measurement.startY * scale}px`;
+        measureEndDot.style.left = `${measurement.endX * scale}px`;
+        measureEndDot.style.top = `${measurement.endY * scale}px`;
+        measureLabel.textContent = `${measurementDistance(measurement)} px`;
+        measureLabel.style.left = `${(((measurement.startX + measurement.endX) / 2) / store.width) * 100}%`;
+        measureLabel.style.top = `${(((measurement.startY + measurement.endY) / 2) / store.height) * 100}%`;
+        measureLayer.classList.add('visible');
+    } else {
+        measureLayer.classList.remove('visible');
     }
     if (store.symmetry.enabled || store.symmetry.transformMode) {
         drawSymmetryToContext(
