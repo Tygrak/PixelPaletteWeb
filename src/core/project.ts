@@ -57,8 +57,9 @@ export interface ProjectNode {
     kind: 'layer' | 'group';
     name: string;
     visible: boolean;
-    // Layers:
+    // Layers and groups:
     opacity?: number;
+    // Layers:
     offsetX?: number;
     offsetY?: number;
     imageIndex?: number;
@@ -227,6 +228,7 @@ export function encodeProject(store: Store): Blob {
                   kind: 'group',
                   name: node.name,
                   visible: node.visible,
+                  opacity: node.opacity,
                   children: node.children.map(encodeNode),
               }
             : {
@@ -430,6 +432,7 @@ async function decodeNodes(
         if (entry.kind === 'group') {
             const group = createGroup(sanitizeLayerName(entry.name));
             group.visible = entry.visible !== false;
+            group.opacity = typeof entry.opacity === 'number' ? Math.max(0, Math.min(1, entry.opacity)) : 1;
             group.children = await decodeNodes(entry.children, images, idMap);
             if (typeof entry.id === 'number') {
                 idMap.set(entry.id, group.id);

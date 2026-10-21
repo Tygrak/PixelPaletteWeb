@@ -43,6 +43,7 @@ src/
     dither.ts        Threshold, Random, Ordered, Floyd–Steinberg, MinAvgErr
     adjust.ts        Invert/grayscale, HSL shift, separable blur
     effects.ts       Edge detection (Sobel + hysteresis + dilation)
+    shadow.ts        Drop shadow (silhouette + blur, shared with the Text tool)
     modifiers.ts     Symmetry guides, transforms, symmetrized fills, palette lock
   editor/            Interactive editing session state
     canvasView.ts    Canvas stack, zoom/pan, minimap, overlay, sampling
@@ -57,8 +58,8 @@ src/
     panels.ts        Sidebar docked-panel toggles
     palettePanel.ts  Palette generation/editing
     ditherPanel.ts   Dithering
-    adjustmentsPanel.ts  Common / HSL / blur / compare
-    effectsPanel.ts  Edge detection
+    adjustmentsPanel.ts  Common / HSL / blur / drop shadow / edge detection / compare
+    effectsPanel.ts  Edge detection tab (hosted in the Adjustments panel)
     layersPanel.ts   Full Layers panel (uses ui/layerList.ts)
     layerList.ts     Shared layer-tree list: selection, rename, drag & drop
     miniLayers.ts    Compact sidebar layers list
@@ -143,20 +144,27 @@ document.
 
 The document is a **node tree**: `LayerNode = Layer | LayerGroup`, ordered
 bottom to top. A `Layer` has `{ id, name, image, visible, opacity, offsetX,
-offsetY }`; a `LayerGroup` has `{ id, name, visible, children }` and children
-may be layers or further groups, so **groups nest arbitrarily**. Layers may
-have different image sizes and offsets; `compositeLayers` flattens the visible
-layers (a hidden group hides its whole subtree) and draws each at its offset,
-clipped to the document bounds, using source-over alpha. A fast path returns
-the single visible layer's image directly when there is no offset/opacity.
-`flattenDisplayNodes` yields the top-first order the Layers lists render.
+offsetY }`; a `LayerGroup` has `{ id, name, visible, opacity, children }` and
+children may be layers or further groups, so **groups nest arbitrarily**.
+Layers may have different image sizes and offsets; `compositeLayers` walks the
+visible tree (a hidden group hides its whole subtree) and draws each layer at
+its offset, clipped to the document bounds, using source-over alpha. A group
+with partial opacity renders its children into its own buffer first and blends
+that as one unit, so overlapping children do not show through each other. A
+fast path returns the single visible layer's image directly when it is the only
+node, unmoved and fully opaque. `compositeRegion` patches a rectangle of the
+cached composite with the same math (used by brush strokes). The Layers panel's
+opacity slider edits the selected layers/groups (`setNodeOpacity`, one undo
+entry per drag); `flattenDisplayNodes` yields the top-first order the Layers
+lists render.
 
 The shared list (`ui/layerList.ts`) drives both the Layers panel and the mini
 list: click / Ctrl+click / Shift+click selection over nodes, inline rename,
 per-node eye toggles and drag & drop. The store exposes node operations
 (`selectNode`, `moveNodes`, `groupSelectedLayers`, `ungroupSelectedLayers`,
 `mergeSelectedLayers`, `mergeLayers`, `duplicateLayer`, `deleteLayer`,
-`renameNode`, `setNodeVisible`); the active layer is tracked by id and is
+`renameNode`, `setNodeVisible`, `setNodeOpacity`); the active layer is tracked
+by id and is
 always a real layer (clicking a group focuses its topmost layer). Drop rules:
 **onto a group header** = top of that group, **between rows** = the level of
 the row below (so gaps inside a group stay inside it), **above a group header**
@@ -272,7 +280,11 @@ pressure math live in `core/brushes.ts`:
 
 Other tools: the **Text** tool is an interactive session in `editor/textTool.ts`
 (in-progress string + caret, committed on Enter); `core/text.ts` rasterizes it
-and the result is applied through `ctx.applyImage`. The **Measure** tool
+and the result is applied through `ctx.applyImage`. The options bar's **Shadow**
+checkbox casts a soft drop shadow behind the text — previewed live on the
+overlay with a canvas blur and baked on commit through
+`core/shadow.ts` with the same offset/softness, scaled to the text size
+(`textShadowOptions`). The **Measure** tool
 (`editor/measure.ts` holds the points) renders its line, endpoint dots and
 `.measure-label` distance readout as DOM elements inside the canvas stack
 (`redrawOverlay()` positions them from the displayed scale), so they stay
@@ -366,12 +378,16 @@ timeline `sync()` respectively.
 
 ## Processing panels
 
-Dither, Palette, Adjustments and Effects all read from **`store.activeImage`**
-(the active layer's own pixels) and write back with `ctx.applyImage()` →
-`store.changeMainImage()`. They never operate on the flattened composite, so
-they affect only the current layer. Exceptions that intentionally use the
-composite: Compare (Adjustments), eyedropper sampling, wand selection, Copy
-selection, and Save.
+Dither, Palette and the **Adjustments** panel (which now also hosts the former
+Effects edge-detection controls and the drop-shadow effect) all read from
+**`store.activeImage`** (the active layer's own pixels) and write back with
+`ctx.applyImage()` → `store.changeMainImage()`. They never operate on the
+flattened composite, so they affect only the current layer. Exceptions that
+intentionally use the composite: Compare (Adjustments), eyedropper sampling,
+wand selection, Copy selection, and Save. The **Drop Shadow** tab builds a
+colored, optionally blurred silhouette of the active layer
+(`core/shadow.ts`'s `shadowSilhouette`) and composites it behind the layer's
+pixels (`withDropShadow`), with offset X/Y, softness and opacity controls.
 
 ## Save & export (`ui/saveDialog.ts`, `shared/files.ts`)
 
@@ -407,7 +423,8 @@ link, and text import/export for palettes.
 ## Projects & recent files (`core/project.ts`, `core/recentFiles.ts`)
 
 A project is a small binary container holding the whole session: every frame
-and, per layer, its name, visibility, opacity, offsets and pixels. Layout:
+and, per node, its name, visibility and opacity (groups too), plus layer
+offsets and pixels. Layout:
 `"PPAL"` magic + version + manifest length, then a JSON manifest (dimensions,
 frames whose node trees hold layers/groups with an `imageIndex` per layer,
 image byte lengths, palette, foreground color, the selected brush and size,

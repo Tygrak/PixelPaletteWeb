@@ -149,6 +149,7 @@ export class Store {
     textFont = 'sans-serif';
     textBold = false;
     textItalic = false;
+    textShadow = false;
 
     selection: Selection | null = null;
 
@@ -1073,6 +1074,25 @@ export class Store {
         this.notify();
     }
 
+    // Sets the opacity (0..1) of the given layers/groups. `history` pushes an
+    // undo snapshot first; the Layers panel keeps one entry per slider drag.
+    setNodeOpacity(ids: number[], opacity: number, history = true): void {
+        const value = Math.max(0, Math.min(1, opacity));
+        const targets = ids
+            .map((id) => findNode(this.nodes, id))
+            .filter((node): node is LayerNode => node !== null);
+        if (targets.length === 0 || targets.every((node) => node.opacity === value)) {
+            return;
+        }
+        if (history) {
+            this.pushHistory();
+        }
+        for (const node of targets) {
+            node.opacity = value;
+        }
+        this.notify();
+    }
+
     renameNode(id: number, name: string): void {
         const node = findNode(this.nodes, id);
         const trimmed = name.trim();
@@ -1370,6 +1390,11 @@ export class Store {
 
     setTextItalic(italic: boolean): void {
         this.textItalic = italic;
+        this.emit();
+    }
+
+    setTextShadow(shadow: boolean): void {
+        this.textShadow = shadow;
         this.emit();
     }
 

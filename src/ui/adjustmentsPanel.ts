@@ -1,7 +1,10 @@
 import { blurImage, grayscaleImage, invertImage, shiftHsl } from '../core/adjust';
+import { withDropShadow } from '../core/shadow';
 import { AppContext } from '../context';
-import { button, createDockPanel, createTabs, DockPanel, h, num, numeric, rowHint } from '../shared/dom';
+import { colorToHex, rgb, RGB } from '../shared/color';
+import { button, colorSwatch, createDockPanel, createTabs, DockPanel, h, num, numeric, rowHint } from '../shared/dom';
 import { calculateAverageBrightnessError, calculateAverageError, flipImage, rotateImage } from '../shared/image';
+import { createEdgeDetectionTab } from './effectsPanel';
 
 export function openAdjustmentsPanel(ctx: AppContext, onClose?: () => void): DockPanel {
     const { store } = ctx;
@@ -77,6 +80,48 @@ export function openAdjustmentsPanel(ctx: AppContext, onClose?: () => void): Doc
         ]),
     ]);
 
+    // --- Drop shadow ---
+    let shadowColor: RGB = rgb(0, 0, 0);
+    const shadowSwatch = colorSwatch(shadowColor, 'palette-swatch');
+    const shadowHex = h('span', { class: 'row-value', text: colorToHex(shadowColor) });
+    const shadowXInput = numeric(4, { min: -250, max: 250, step: 1, width: 120 });
+    const shadowYInput = numeric(4, { min: -250, max: 250, step: 1, width: 120 });
+    const shadowBlurInput = numeric(4, { min: 0, max: 50, step: 1, width: 120 });
+    const shadowOpacityInput = numeric(60, { min: 0, max: 100, step: 1, width: 120 });
+    const shadowTab = h('div', { class: 'tab-content' }, [
+        rowHint('Offset X (px):', 'How far the shadow falls to the right (negative = left).', shadowXInput),
+        rowHint('Offset Y (px):', 'How far the shadow falls down (negative = up).', shadowYInput),
+        rowHint('Softness (px):', 'Blurs the shadow edge so it fades out instead of ending hard.', shadowBlurInput),
+        rowHint('Opacity (%):', 'Strength of the shadow.', shadowOpacityInput),
+        rowHint(
+            'Shadow color:',
+            'Color of the cast shadow.',
+            shadowSwatch,
+            shadowHex,
+            button('Pick Color', async () => {
+                shadowColor = await ctx.selectColor(shadowColor);
+                shadowSwatch.style.background = `rgb(${shadowColor.r}, ${shadowColor.g}, ${shadowColor.b})`;
+                shadowHex.textContent = colorToHex(shadowColor);
+            }),
+        ),
+        h('div', { class: 'button-row' }, [
+            button(
+                'Apply Drop Shadow',
+                () =>
+                    apply('Adding drop shadow', () =>
+                        withDropShadow(store.activeImage!, {
+                            color: shadowColor,
+                            offsetX: num(shadowXInput),
+                            offsetY: num(shadowYInput),
+                            blur: num(shadowBlurInput),
+                            opacity: num(shadowOpacityInput) / 100,
+                        }),
+                    ),
+                "Casts a shadow behind the active layer's non-transparent pixels.",
+            ),
+        ]),
+    ]);
+
     // --- Compare ---
     const errorText = h('span', { class: 'row-value' });
     const brightnessText = h('span', { class: 'row-value' });
@@ -121,6 +166,8 @@ export function openAdjustmentsPanel(ctx: AppContext, onClose?: () => void): Doc
             { label: 'Common', content: commonTab },
             { label: 'HSL shift', content: hslTab },
             { label: 'Blur', content: blurTab },
+            { label: 'Drop Shadow', content: shadowTab },
+            { label: 'Edge Detection', content: createEdgeDetectionTab(ctx) },
             { label: 'Compare', content: compareTab },
         ]),
     );

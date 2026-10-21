@@ -1,20 +1,11 @@
 import { colorToHex, rgb, RGB } from '../shared/color';
 import { AppContext } from '../context';
-import {
-    button,
-    colorSwatch,
-    createDockPanel,
-    createTabs,
-    DockPanel,
-    h,
-    num,
-    numeric,
-    rowHint,
-} from '../shared/dom';
+import { button, colorSwatch, h, num, numeric, rowHint } from '../shared/dom';
 import { detectEdges } from '../core/effects';
 
-export function openEffectsPanel(ctx: AppContext, onClose?: () => void): DockPanel {
-    const panel = createDockPanel(ctx.dock, 'Effects', onClose);
+// Edge-detection controls, shown as a tab in the Adjustments panel (the former
+// standalone Effects panel was merged into it).
+export function createEdgeDetectionTab(ctx: AppContext): HTMLElement {
     const { store } = ctx;
 
     let edgeColor: RGB = rgb(255, 255, 255);
@@ -56,7 +47,7 @@ export function openEffectsPanel(ctx: AppContext, onClose?: () => void): DockPan
         colorHex.textContent = colorToHex(edgeColor);
     });
 
-    const edgeTab = h('div', { class: 'tab-content' }, [
+    return h('div', { class: 'tab-content' }, [
         rowHint('Edge width (px):', 'Thickness of the detected edge lines, in pixels.', widthInput),
         rowHint('Edge color:', 'Color used to draw the detected edges.', swatch, colorHex, pickColorButton),
         rowHint('Auto thresholds:', 'Choose the low and high thresholds automatically from the image.', autoCheckbox),
@@ -87,8 +78,4 @@ export function openEffectsPanel(ctx: AppContext, onClose?: () => void): DockPan
             }),
         ]),
     ]);
-
-    panel.body.append(createTabs([{ label: 'Edge Detection', content: edgeTab }]));
-
-    return panel;
 }

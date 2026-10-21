@@ -4,5 +4,6 @@
 -make the magic wand tool icon look more like a wand
 
 -make opacity slider for layers/groups
--make a drop shadow effect (all non transparent pixels cast a shadow of custom color, maybe something so its more transparent at the edge)
--maybe combine effects+adjustments into one tab (named adjustments)
+-combine effects+adjustments into one tab (named adjustments)
+-make a drop shadow effect (all non transparent pixels in selected layer cast a shadow of custom color, maybe something so its more transparent at the edge), have options for how many pixels long the shadow should be etc, in adjustment tab
+-make option for text tool to enable shadow directly during writing

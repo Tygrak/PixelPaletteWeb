@@ -11,6 +11,7 @@ import { getCloneMarker, isBrushTool } from './paint';
 import { selectionOverlay } from '../core/selection';
 import { getSelectionDrag } from './selectionDrag';
 import { getTextEditing, isCaretOn, textFontString } from './textTool';
+import { textShadowOptions } from '../core/text';
 import { getActiveColorPicker } from '../ui/selectColor';
 
 // Canvas view: the canvas stack (image + overlay), zoom/pan, the minimap,
@@ -522,6 +523,17 @@ export function redrawOverlay(): void {
         context.save();
         context.font = textFontString();
         context.textBaseline = 'top';
+        if (store.textShadow) {
+            // Preview the drop shadow with a canvas blur; the committed text
+            // uses the same offset/blur/opacity rasterized in core/text.ts.
+            const shadow = textShadowOptions(store.textSize);
+            context.filter = `blur(${shadow.blur}px)`;
+            context.globalAlpha = shadow.opacity;
+            context.fillStyle = `rgb(${shadow.color.r}, ${shadow.color.g}, ${shadow.color.b})`;
+            context.fillText(editing.content, editing.x + shadow.offsetX, editing.y + shadow.offsetY);
+            context.filter = 'none';
+            context.globalAlpha = 1;
+        }
         const previewColor = store.paintColor;
         context.fillStyle = `rgb(${previewColor.r}, ${previewColor.g}, ${previewColor.b})`;
         context.fillText(editing.content, editing.x, editing.y);

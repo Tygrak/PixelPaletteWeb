@@ -17,7 +17,7 @@ npm run preview  # serve the production build
 ## Features
 
 - **Painting:** brush, eraser, clone stamp, spot healing, palette knife, paint
-  bucket, and text. `Shift+click` with the brush or eraser continues from the
+  bucket, and text (with an optional soft drop shadow while typing). `Shift+click` with the brush or eraser continues from the
   previous stroke's end with a straight line, and holding `Shift` mid-stroke
   locks the brush to a horizontal or vertical line from the point where Shift
   was pressed (releasing it resumes freehand, with no jump).
@@ -41,16 +41,18 @@ npm run preview  # serve the production build
   when a palette color is edited.
 - **Layers:** a layer tree with **nested groups** (groups inside groups), add,
   duplicate, reorder, drag & drop into/out of groups, merge, delete,
-  per-layer and per-group visibility, live compositing, multi-selection for
-  grouping and merging, and a compact layer list in the sidebar.
+  per-layer and per-group visibility, an opacity slider for the selected
+  layers/groups (groups blend as one unit), live compositing, multi-selection
+  for grouping and merging, and a compact layer list in the sidebar.
 - **Animation:** a frame timeline with playback, onion skinning, and export as a
   sprite sheet, separate images, or a looping animated GIF.
 - **Palette & dithering:** median-cut, K-means, HML-sector, hue-cluster and
   duo-tone palettes; threshold, random, ordered (Bayer), Floyd–Steinberg and
   min-average-error dithering.
 - **Adjustments:** invert colors, grayscale, rotate, flip, HSL shift, blur,
-  and compare.
-- **Effects:** Sobel edge detection with hysteresis and auto thresholds.
+  drop shadow (color, offset X/Y, softness, opacity), Sobel edge detection
+  with hysteresis and auto thresholds, and compare — all in one Adjustments
+  panel.
 - **Project files:** save the whole session — every layer, frame and the
   palette — as a `.pixelpalette` file and reopen it later, instead of only
   exporting flattened images.

@@ -290,6 +290,12 @@ export function createOptionsBar(ctx: AppContext): OptionsBar {
     textItalicCheckbox.title = 'Render the text in italics.';
     textItalicCheckbox.addEventListener('change', () => store.setTextItalic(textItalicCheckbox.checked));
 
+    const textShadowCheckbox = document.createElement('input');
+    textShadowCheckbox.type = 'checkbox';
+    textShadowCheckbox.checked = store.textShadow;
+    textShadowCheckbox.title = 'Add a soft drop shadow behind the text while writing and after committing.';
+    textShadowCheckbox.addEventListener('change', () => store.setTextShadow(textShadowCheckbox.checked));
+
     const textSwatch = h('span', { class: 'palette-swatch small' });
     const textPickButton = h('button', {
         class: 'btn',
@@ -310,6 +316,8 @@ export function createOptionsBar(ctx: AppContext): OptionsBar {
         textBoldCheckbox,
         h('span', { class: 'row-label', text: 'Italic' }),
         textItalicCheckbox,
+        h('span', { class: 'row-label', text: 'Shadow' }),
+        textShadowCheckbox,
         textSwatch,
         textPickButton,
     ]);
@@ -345,6 +353,7 @@ export function createOptionsBar(ctx: AppContext): OptionsBar {
         textFontSelect.value = store.textFont;
         textBoldCheckbox.checked = store.textBold;
         textItalicCheckbox.checked = store.textItalic;
+        textShadowCheckbox.checked = store.textShadow;
         textSwatch.style.background = `rgb(${store.foreground.r}, ${store.foreground.g}, ${store.foreground.b})`;
         renderPaletteStrip();
         if (document.activeElement !== resizeWidthInput && store.width > 0) {

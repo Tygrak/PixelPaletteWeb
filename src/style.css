@@ -907,6 +907,23 @@ input[type='checkbox'] {
     padding: 2px;
 }
 
+/* Opacity slider above the layer buttons. */
+.layer-opacity {
+    flex: 1;
+    min-width: 0;
+}
+
+.layer-opacity input[type='range'] {
+    flex: 1;
+    min-width: 0;
+    accent-color: var(--accent, #6aa3ff);
+}
+
+.layer-opacity .row-value {
+    min-width: 40px;
+    text-align: right;
+}
+
 .layer-item {
     display: flex;
     align-items: center;
