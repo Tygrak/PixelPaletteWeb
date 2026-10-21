@@ -4,7 +4,7 @@ import { isGroup } from './core/layers';
 import { cancelFloating, commitFloating, copySelectionToClipboard, isFloating, nudgeMove } from './editor/floatingSelection';
 import { clearMeasurement } from './editor/measure';
 import { isBrushTool } from './editor/paint';
-import { backspaceText, cancelText, commitText, isTextEditing, typeText } from './editor/textTool';
+import { backspaceText, cancelText, commitText, isTextEditing, nudgeText, typeText } from './editor/textTool';
 import { ToolId, toolForShortcut } from './core/tools';
 import { Timeline } from './ui/timeline';
 
@@ -95,6 +95,14 @@ export function installShortcuts(hooks: ShortcutHooks): void {
             if (event.key === 'Backspace') {
                 event.preventDefault();
                 backspaceText();
+                return;
+            }
+            // Arrow keys nudge the text being written (Shift = ten pixels).
+            const step = ARROW_STEPS[event.key];
+            if (step) {
+                event.preventDefault();
+                const distance = event.shiftKey ? 10 : 1;
+                nudgeText(step[0] * distance, step[1] * distance);
                 return;
             }
             if (event.key.length === 1) {

@@ -83,6 +83,17 @@ export function backspaceText(): void {
     hooks?.redraw();
 }
 
+// Moves the text being written (arrow keys while editing). The preview, the
+// caret and the committed position all follow.
+export function nudgeText(dx: number, dy: number): void {
+    if (!editing) {
+        return;
+    }
+    editing.x += dx;
+    editing.y += dy;
+    hooks?.redraw();
+}
+
 export function commitText(): void {
     if (!editing) {
         return;

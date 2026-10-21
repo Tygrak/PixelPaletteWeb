@@ -46,7 +46,7 @@ export function openLayersPanel(ctx: AppContext, onClose?: () => void): DockPane
     const ungroupButton = button(
         'Ungroup',
         () => store.ungroupSelectedLayers(),
-        'Dissolve the selected groups, moving their children up one level',
+        'Dissolve the selected groups, moving their children up one level (Ctrl+G with only a group selected)',
     );
     const mergeSelectedButton = button(
         'Merge Selected',

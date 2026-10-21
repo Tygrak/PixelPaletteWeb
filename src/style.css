@@ -924,6 +924,67 @@ input[type='checkbox'] {
     text-align: right;
 }
 
+/* Right-click menu on layer rows (mini list and Layers panel). */
+.layer-context-menu {
+    position: fixed;
+    z-index: 1000;
+    min-width: 210px;
+    padding: 6px;
+    background: var(--bg-control);
+    border: 1px solid var(--border);
+    border-radius: 4px;
+    box-shadow: 0 8px 24px rgba(0, 0, 0, 0.45);
+    display: flex;
+    flex-direction: column;
+    gap: 2px;
+}
+
+.layer-context-opacity {
+    display: flex;
+    align-items: center;
+    gap: 8px;
+    padding: 4px 6px;
+}
+
+.layer-context-opacity input[type='range'] {
+    flex: 1;
+    min-width: 90px;
+    accent-color: var(--accent, #6aa3ff);
+}
+
+.layer-context-opacity .row-value {
+    min-width: 38px;
+    text-align: right;
+}
+
+.layer-context-separator {
+    height: 1px;
+    margin: 4px 2px;
+    background: var(--border);
+}
+
+.layer-context-item {
+    display: block;
+    width: 100%;
+    padding: 5px 8px;
+    border: none;
+    border-radius: 3px;
+    background: none;
+    color: var(--text);
+    font: inherit;
+    text-align: left;
+    cursor: pointer;
+}
+
+.layer-context-item:hover:not(:disabled) {
+    background: var(--bg-item-hover);
+}
+
+.layer-context-item:disabled {
+    opacity: 0.45;
+    cursor: default;
+}
+
 .layer-item {
     display: flex;
     align-items: center;

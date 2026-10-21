@@ -62,6 +62,7 @@ src/
     effectsPanel.ts  Edge detection tab (hosted in the Adjustments panel)
     layersPanel.ts   Full Layers panel (uses ui/layerList.ts)
     layerList.ts     Shared layer-tree list: selection, rename, drag & drop
+    layerContextMenu.ts  Right-click menu shared by both layer lists
     miniLayers.ts    Compact sidebar layers list
     newFileDialog.ts New file dialog (size presets / animation mode / clipboard image)
     timeline.ts      Animation timeline (frames, playback, onion skin)
@@ -160,12 +161,17 @@ lists render.
 
 The shared list (`ui/layerList.ts`) drives both the Layers panel and the mini
 list: click / Ctrl+click / Shift+click selection over nodes, inline rename,
-per-node eye toggles and drag & drop. The store exposes node operations
+per-node eye toggles and drag & drop. Right-clicking a row opens the shared
+context menu (`ui/layerContextMenu.ts`): an opacity slider for the clicked node
+(or the whole selection when it is part of one) plus rename, duplicate, merge
+down/selected, group, ungroup and delete — disabled entries follow the same
+rules as the panel buttons, and each item's tooltip shows its keyboard
+shortcut. The store exposes node operations
 (`selectNode`, `moveNodes`, `groupSelectedLayers`, `ungroupSelectedLayers`,
 `mergeSelectedLayers`, `mergeLayers`, `duplicateLayer`, `deleteLayer`,
 `renameNode`, `setNodeVisible`, `setNodeOpacity`); the active layer is tracked
-by id and is
-always a real layer (clicking a group focuses its topmost layer). Drop rules:
+by id and is always a real layer (clicking a group focuses its topmost layer).
+Drop rules:
 **onto a group header** = top of that group, **between rows** = the level of
 the row below (so gaps inside a group stay inside it), **above a group header**
 = above the group, and at the very bottom = below the last row. Groups can
@@ -284,7 +290,9 @@ and the result is applied through `ctx.applyImage`. The options bar's **Shadow**
 checkbox casts a soft drop shadow behind the text — previewed live on the
 overlay with a canvas blur and baked on commit through
 `core/shadow.ts` with the same offset/softness, scaled to the text size
-(`textShadowOptions`). The **Measure** tool
+(`textShadowOptions`). Arrow keys move the text being written
+(`nudgeText()`, Shift = ten pixels), and the preview, caret and committed
+position follow. The **Measure** tool
 (`editor/measure.ts` holds the points) renders its line, endpoint dots and
 `.measure-label` distance readout as DOM elements inside the canvas stack
 (`redrawOverlay()` positions them from the displayed scale), so they stay
@@ -512,7 +520,8 @@ the same slot in the brush library (`digitIndex()` reads `event.code` so
 shifted main-row digits keep working). Space is context-sensitive: it pans
 (drag) normally, or
 toggles animation playback in animation mode. While the Text tool is editing, it
-handles Escape/Enter/Backspace/characters instead. `Delete`/`Backspace` clears
+handles Escape/Enter/Backspace/characters instead, plus arrow keys to nudge the
+text (Shift = ten pixels). `Delete`/`Backspace` clears
 the selection, or deletes the focused frame / focused layer: clicking a
 timeline frame sets `store.frameFocus`, clicking a row in the mini/full Layers
 lists sets `store.layerFocus`, and clicks elsewhere (in `main.ts`) clear both;

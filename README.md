@@ -17,7 +17,8 @@ npm run preview  # serve the production build
 ## Features
 
 - **Painting:** brush, eraser, clone stamp, spot healing, palette knife, paint
-  bucket, and text (with an optional soft drop shadow while typing). `Shift+click` with the brush or eraser continues from the
+  bucket, and text (with an optional soft drop shadow while typing; the arrow
+  keys nudge the text being written — hold `Shift` for ten pixels). `Shift+click` with the brush or eraser continues from the
   previous stroke's end with a straight line, and holding `Shift` mid-stroke
   locks the brush to a horizontal or vertical line from the point where Shift
   was pressed (releasing it resumes freehand, with no jump).
@@ -44,6 +45,9 @@ npm run preview  # serve the production build
   per-layer and per-group visibility, an opacity slider for the selected
   layers/groups (groups blend as one unit), live compositing, multi-selection
   for grouping and merging, and a compact layer list in the sidebar.
+  Right-clicking a row in either list opens a menu with the opacity slider and
+  every selection operation (rename, duplicate, merge down/selected, group,
+  ungroup, delete).
 - **Animation:** a frame timeline with playback, onion skinning, and export as a
   sprite sheet, separate images, or a looping animated GIF.
 - **Palette & dithering:** median-cut, K-means, HML-sector, hue-cluster and

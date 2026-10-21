@@ -14,6 +14,7 @@ import { findParent, isGroup, isLayer, LayerGroup, LayerNode } from '../core/lay
 import { h } from '../shared/dom';
 import type { Store } from '../core/store';
 import { EYE_ICON, EYE_OFF_ICON } from './icons';
+import { openLayerContextMenu } from './layerContextMenu';
 
 export interface LayerListOptions {
     store: Store;
@@ -168,6 +169,27 @@ export function createLayerList(options: LayerListOptions): LayerList {
         element.addEventListener('pointermove', onRowMove);
         element.addEventListener('pointerup', onRowUp);
         element.addEventListener('pointercancel', onRowUp);
+        element.addEventListener('contextmenu', (event) => {
+            event.preventDefault();
+            event.stopPropagation();
+            if (!store.isNodeSelected(node.id)) {
+                store.selectNode(node.id, 'replace');
+            }
+            store.setLayerFocus(true);
+            openLayerContextMenu(
+                node,
+                {
+                    rename: (id) => {
+                        const target = rows.find((entry) => entry.node.id === id);
+                        if (target) {
+                            startRename(target.node);
+                        }
+                    },
+                },
+                event.clientX,
+                event.clientY,
+            );
+        });
         return element;
     };
 
