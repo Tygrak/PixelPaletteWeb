@@ -73,6 +73,13 @@ export function openSettingsPanel(ctx: AppContext, onClose?: () => void): DockPa
         store.updateSettings({ autoSaveRecent: autoSaveCheckbox.checked }),
     );
 
+    const shareEraserSizeCheckbox = document.createElement('input');
+    shareEraserSizeCheckbox.type = 'checkbox';
+    shareEraserSizeCheckbox.checked = store.settings.shareEraserSize;
+    shareEraserSizeCheckbox.addEventListener('change', () =>
+        store.updateSettings({ shareEraserSize: shareEraserSizeCheckbox.checked }),
+    );
+
     const autoSaveCountInput = document.createElement('input');
     autoSaveCountInput.type = 'number';
     autoSaveCountInput.min = String(AUTO_SAVE_MIN);
@@ -163,6 +170,11 @@ export function openSettingsPanel(ctx: AppContext, onClose?: () => void): DockPa
                 'Show the timeline at the bottom to add frames, reorder them and play the animation.',
                 animationCheckbox,
             ),
+            rowHint(
+                'Share eraser size with brush:',
+                'When off, the eraser keeps its own size and the brush is unaffected. When on, both tools always use the same size.',
+                shareEraserSizeCheckbox,
+            ),
             brushSettings.root,
         ]),
     );
@@ -183,6 +195,7 @@ export function openSettingsPanel(ctx: AppContext, onClose?: () => void): DockPa
         blankCheckbox.checked = store.settings.blankNewImage;
         minimapCheckbox.checked = store.settings.minimap;
         autoSaveCheckbox.checked = store.settings.autoSaveRecent;
+        shareEraserSizeCheckbox.checked = store.settings.shareEraserSize;
         if (document.activeElement !== autoSaveCountInput) {
             autoSaveCountInput.value = String(store.settings.autoSaveCount);
         }

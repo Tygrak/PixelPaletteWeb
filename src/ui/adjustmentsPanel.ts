@@ -87,12 +87,20 @@ export function openAdjustmentsPanel(ctx: AppContext, onClose?: () => void): Doc
     const shadowXInput = numeric(4, { min: -250, max: 250, step: 1, width: 120 });
     const shadowYInput = numeric(4, { min: -250, max: 250, step: 1, width: 120 });
     const shadowBlurInput = numeric(4, { min: 0, max: 50, step: 1, width: 120 });
-    const shadowOpacityInput = numeric(60, { min: 0, max: 100, step: 1, width: 120 });
+    const shadowOpacityInput = numeric(100, { min: 0, max: 100, step: 1, width: 120 });
+    const shadowSweepCheckbox = document.createElement('input');
+    shadowSweepCheckbox.type = 'checkbox';
+    shadowSweepCheckbox.checked = true;
     const shadowTab = h('div', { class: 'tab-content' }, [
         rowHint('Offset X (px):', 'How far the shadow falls to the right (negative = left).', shadowXInput),
         rowHint('Offset Y (px):', 'How far the shadow falls down (negative = up).', shadowYInput),
         rowHint('Softness (px):', 'Blurs the shadow edge so it fades out instead of ending hard.', shadowBlurInput),
         rowHint('Opacity (%):', 'Strength of the shadow.', shadowOpacityInput),
+        rowHint(
+            'Connect to layer:',
+            'Sweeps the shadow from the layer edge all the way to the offset, so there is no gap between them.',
+            shadowSweepCheckbox,
+        ),
         rowHint(
             'Shadow color:',
             'Color of the cast shadow.',
@@ -115,6 +123,7 @@ export function openAdjustmentsPanel(ctx: AppContext, onClose?: () => void): Doc
                             offsetY: num(shadowYInput),
                             blur: num(shadowBlurInput),
                             opacity: num(shadowOpacityInput) / 100,
+                            sweep: shadowSweepCheckbox.checked,
                         }),
                     ),
                 "Casts a shadow behind the active layer's non-transparent pixels.",

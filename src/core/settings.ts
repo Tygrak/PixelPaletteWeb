@@ -21,6 +21,7 @@ export interface Settings {
     saveColumns: number; // 0 = auto
     autoSaveRecent: boolean; // keep recent documents in localStorage (crash recovery)
     autoSaveCount: number; // how many recent documents to keep
+    shareEraserSize: boolean; // eraser uses the brush size instead of its own size
 }
 
 const STORAGE_KEY = 'pixelpalette.settings';
@@ -40,6 +41,7 @@ export const DEFAULT_SETTINGS: Settings = {
     saveColumns: 0,
     autoSaveRecent: true,
     autoSaveCount: 20,
+    shareEraserSize: false,
 };
 
 // Bounds for settings.autoSaveCount.

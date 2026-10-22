@@ -70,6 +70,7 @@ export interface DocumentData {
     // Tool state that travels with the document (project files).
     brushId?: string;
     brushSize?: number;
+    eraserSize?: number;
     // Drawing modifiers travel with the document (project files).
     symmetry?: SymmetryState;
     paletteLock?: PaletteLockState;
@@ -124,6 +125,8 @@ export class Store {
     activeTool: ToolId = 'hand';
     foreground: RGB = rgb(0, 0, 0);
     brushSize = 10;
+    // The eraser keeps its own size unless settings.shareEraserSize is on.
+    eraserSize = 10;
     brushOpacity = 1;
     brushId = DEFAULT_BRUSH_ID;
     knifeSmear = 0.6;
@@ -759,6 +762,9 @@ export class Store {
         if (data.brushSize !== undefined) {
             this.brushSize = data.brushSize;
         }
+        if (data.eraserSize !== undefined) {
+            this.eraserSize = data.eraserSize;
+        }
         this.selection = null;
         // Modifier state saved with the document; old files without it keep the
         // current settings and just recenter the guide.
@@ -1048,6 +1054,47 @@ export class Store {
         this.emit();
     }
 
+    // Focuses a layer as if its row was clicked: it becomes the active layer
+    // and the only selected node.
+    private focusLayer(id: number): void {
+        this.activeId = id;
+        this.nodeSelection = new Set([id]);
+        this.emit();
+    }
+
+    // All layers in the order the Layers lists show them (top first).
+    private layersTopFirst(): Layer[] {
+        return [...this.layers].reverse();
+    }
+
+    // Moves the focused layer through the stack: +1 goes up (towards the
+    // topmost layer), -1 goes down. Used by Alt+] / Alt+[. Returns whether the
+    // focus actually moved.
+    stepLayerFocus(direction: number): boolean {
+        const layers = this.layersTopFirst();
+        if (layers.length === 0) {
+            return false;
+        }
+        const index = layers.findIndex((layer) => layer.id === this.activeId);
+        const next = index < 0 ? 0 : index + direction;
+        if (next === index || next < 0 || next >= layers.length) {
+            return false;
+        }
+        this.focusLayer(layers[next].id);
+        return true;
+    }
+
+    // Focuses the nth layer from the top (0 = topmost layer), used by
+    // Alt+1..9. Returns whether a layer was focused.
+    focusLayerFromTop(index: number): boolean {
+        const layers = this.layersTopFirst();
+        if (index < 0 || index >= layers.length || layers[index].id === this.activeId) {
+            return false;
+        }
+        this.focusLayer(layers[index].id);
+        return true;
+    }
+
     // True while the last click was on a layer row (mini or full Layers
     // panel). Delete then removes that layer instead of the selection; any
     // click elsewhere clears it.
@@ -1286,8 +1333,29 @@ export class Store {
         this.emit();
     }
 
+    // Size a tool paints with. The eraser has its own size unless the
+    // "Share eraser size with brush" setting is on; clone, heal and knife
+    // always use the brush size.
+    brushSizeFor(tool: ToolId): number {
+        return tool === 'eraser' && !this.settings.shareEraserSize ? this.eraserSize : this.brushSize;
+    }
+
+    // Size of the selected tool, used by the options bar, shortcuts and cursor.
+    get activeBrushSize(): number {
+        return this.brushSizeFor(this.activeTool);
+    }
+
     setBrushSize(size: number): void {
         this.brushSize = size;
+        this.emit();
+    }
+
+    setActiveBrushSize(size: number): void {
+        if (this.activeTool === 'eraser' && !this.settings.shareEraserSize) {
+            this.eraserSize = size;
+        } else {
+            this.brushSize = size;
+        }
         this.emit();
     }
 

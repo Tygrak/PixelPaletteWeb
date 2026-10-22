@@ -316,7 +316,7 @@ function paintStrokeSegment(
     const brush = store.brush;
     const sizeFactor = pressureFactor(brush.pressure.sizeMin, brush.pressure.sizeCurve, pressure);
     const alphaFactor = pressureFactor(brush.pressure.alphaMin, brush.pressure.alphaCurve, pressure);
-    const radius = Math.max(0.5, (store.brushSize / 2) * sizeFactor);
+    const radius = Math.max(0.5, (store.brushSizeFor(strokeKind) / 2) * sizeFactor);
     // Pixel brushes always stamp fully opaque, on/off pixels (pixel art), and
     // palette lock does the same so soft edges cannot leave off-palette or
     // semi-transparent pixels behind.

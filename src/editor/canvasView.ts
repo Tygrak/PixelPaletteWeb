@@ -562,11 +562,12 @@ export function redrawOverlay(): void {
     }
     if (hoverPoint && store.current && isBrushTool(store.activeTool) && !store.symmetry.transformMode) {
         const brush = store.brush;
+        const size = store.activeBrushSize;
         if (!brush.antialias && store.activeTool !== 'knife') {
             // Show the exact pixels a hard (non-antialiased) tip will paint.
             const cx = Math.floor(hoverPoint.x);
             const cy = Math.floor(hoverPoint.y);
-            for (const { dx, dy } of brushFootprint(store.brushSize, brush)) {
+            for (const { dx, dy } of brushFootprint(size, brush)) {
                 const px = cx + dx;
                 const py = cy + dy;
                 const dark = ((px + py) & 1) === 0;
@@ -574,7 +575,7 @@ export function redrawOverlay(): void {
                 context.fillRect(px, py, 1, 1);
             }
         } else {
-            const radius = Math.max(0.5, store.brushSize / 2);
+            const radius = Math.max(0.5, size / 2);
             const hx = hoverPoint.x;
             const hy = hoverPoint.y;
             const drawTip = (r: number): void => {

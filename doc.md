@@ -395,7 +395,10 @@ intentionally use the composite: Compare (Adjustments), eyedropper sampling,
 wand selection, Copy selection, and Save. The **Drop Shadow** tab builds a
 colored, optionally blurred silhouette of the active layer
 (`core/shadow.ts`'s `shadowSilhouette`) and composites it behind the layer's
-pixels (`withDropShadow`), with offset X/Y, softness and opacity controls.
+pixels (`withDropShadow`), with offset X/Y, softness, opacity (default 100%) and
+a **Connect to layer** switch (on by default) that sweeps the silhouette from
+the object's edge all the way to the offset, so the shadow connects to the layer
+instead of leaving a gap between them.
 
 ## Save & export (`ui/saveDialog.ts`, `shared/files.ts`)
 
@@ -517,7 +520,10 @@ Layers panel's list when that panel is open (`renameActiveLayerInPanel()`) and
 the sidebar's mini list otherwise. Number keys pick palette colors (`1`-`9`,
 `0` = tenth); with `Shift` held while a brush-based tool is active they pick
 the same slot in the brush library (`digitIndex()` reads `event.code` so
-shifted main-row digits keep working). Space is context-sensitive: it pans
+shifted main-row digits keep working). With `Alt` held, `[` and `]` move the
+layer focus down/up the stack and `Alt+1`..`Alt+9` focus a layer by its
+position from the top (`Alt+1` = topmost; groups are skipped because focus is
+always a drawable layer). Space is context-sensitive: it pans
 (drag) normally, or
 toggles animation playback in animation mode. While the Text tool is editing, it
 handles Escape/Enter/Backspace/characters instead, plus arrow keys to nudge the

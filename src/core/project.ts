@@ -107,6 +107,7 @@ export interface ProjectManifest {
     // lack them and keep the current session's brush).
     brushId?: string;
     brushSize?: number;
+    eraserSize?: number;
     // Drawing modifiers (optional: files written before they were stored lack
     // them and fall back to the current session's state).
     symmetry?: SymmetryState;
@@ -262,6 +263,7 @@ export function encodeProject(store: Store): Blob {
         foreground: { ...store.foreground },
         brushId: store.brushId,
         brushSize: store.brushSize,
+        eraserSize: store.eraserSize,
         // The guide transform mode is transient editing state, not saved.
         symmetry: { ...store.symmetry, transformMode: false },
         paletteLock: { ...store.paletteLock },
@@ -387,6 +389,7 @@ async function decodeBinaryProject(bytes: Uint8Array<ArrayBuffer>): Promise<Docu
         foreground,
         brushId: sanitizeBrushId(manifest.brushId) ?? undefined,
         brushSize: sanitizeBrushSize(manifest.brushSize) ?? undefined,
+        eraserSize: sanitizeBrushSize(manifest.eraserSize) ?? undefined,
         symmetry: symmetry ?? undefined,
         paletteLock: sanitizePaletteLock(manifest.paletteLock) ?? undefined,
     };

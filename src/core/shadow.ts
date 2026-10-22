@@ -14,33 +14,61 @@ export interface ShadowOptions {
     blur: number;
     // 0..1 strength of the shadow.
     opacity: number;
+    // Sweep the silhouette from its original position all the way to the
+    // offset, so the shadow connects to the object instead of leaving a gap
+    // between them (default: only the offset position).
+    sweep?: boolean;
 }
 
 // Colored silhouette of the image's non-transparent pixels, shifted by the
-// offset and blurred by `blur`; transparent everywhere else.
+// offset and blurred by `blur`; transparent everywhere else. With `sweep` every
+// intermediate offset is included as well, so the shadow has no hole.
 export function shadowSilhouette(source: ImageData, options: ShadowOptions): ImageData {
     const width = source.width;
     const height = source.height;
     const alpha = new Float32Array(width * height);
     const offsetX = Math.round(options.offsetX);
     const offsetY = Math.round(options.offsetY);
-    for (let y = 0; y < height; y++) {
-        const destY = y + offsetY;
-        if (destY < 0 || destY >= height) {
-            continue;
+    if (options.sweep) {
+        const steps = Math.max(1, Math.ceil(Math.max(Math.abs(offsetX), Math.abs(offsetY))));
+        for (let y = 0; y < height; y++) {
+            for (let x = 0; x < width; x++) {
+                const a = source.data[(x + y * width) * 4 + 3] / 255;
+                if (a <= 0) {
+                    continue;
+                }
+                for (let step = 0; step <= steps; step++) {
+                    const destX = x + Math.round((offsetX * step) / steps);
+                    const destY = y + Math.round((offsetY * step) / steps);
+                    if (destX < 0 || destX >= width || destY < 0 || destY >= height) {
+                        continue;
+                    }
+                    const index = destX + destY * width;
+                    if (a > alpha[index]) {
+                        alpha[index] = a;
+                    }
+                }
+            }
         }
-        for (let x = 0; x < width; x++) {
-            const a = source.data[(x + y * width) * 4 + 3] / 255;
-            if (a <= 0) {
+    } else {
+        for (let y = 0; y < height; y++) {
+            const destY = y + offsetY;
+            if (destY < 0 || destY >= height) {
                 continue;
             }
-            const destX = x + offsetX;
-            if (destX < 0 || destX >= width) {
-                continue;
-            }
-            const index = destX + destY * width;
-            if (a > alpha[index]) {
-                alpha[index] = a;
+            for (let x = 0; x < width; x++) {
+                const a = source.data[(x + y * width) * 4 + 3] / 255;
+                if (a <= 0) {
+                    continue;
+                }
+                const destX = x + offsetX;
+                if (destX < 0 || destX >= width) {
+                    continue;
+                }
+                const index = destX + destY * width;
+                if (a > alpha[index]) {
+                    alpha[index] = a;
+                }
             }
         }
     }

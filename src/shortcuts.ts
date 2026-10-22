@@ -209,6 +209,25 @@ export function installShortcuts(hooks: ShortcutHooks): void {
         if (typing || ctrl) {
             return;
         }
+        // Alt+[ / Alt+] move the layer focus down / up the stack, and Alt+1..9
+        // focus a layer by its position from the top (Alt+1 = topmost).
+        if (event.altKey) {
+            if (event.code === 'BracketLeft' || event.code === 'BracketRight') {
+                event.preventDefault();
+                if (store.stepLayerFocus(event.code === 'BracketRight' ? 1 : -1)) {
+                    store.setLayerFocus(true);
+                }
+                return;
+            }
+            const slot = digitIndex(event);
+            if (slot >= 0 && slot < 9) {
+                event.preventDefault();
+                if (store.focusLayerFromTop(slot)) {
+                    store.setLayerFocus(true);
+                }
+                return;
+            }
+        }
         // Move tool: arrow keys nudge the moving content; Shift moves ten
         // pixels per press.
         if (store.activeTool === 'move' && !event.altKey) {
@@ -292,13 +311,15 @@ export function installShortcuts(hooks: ShortcutHooks): void {
             return;
         }
         if (event.key === '[') {
-            const step = store.brushSize <= 10 ? 1 : 2;
-            store.setBrushSize(Math.max(1, store.brushSize - step));
+            const size = store.activeBrushSize;
+            const step = size <= 10 ? 1 : 2;
+            store.setActiveBrushSize(Math.max(1, size - step));
             return;
         }
         if (event.key === ']') {
-            const step = store.brushSize <= 10 ? 1 : 2;
-            store.setBrushSize(Math.min(500, store.brushSize + step));
+            const size = store.activeBrushSize;
+            const step = size <= 10 ? 1 : 2;
+            store.setActiveBrushSize(Math.min(500, size + step));
             return;
         }
         const tool = toolForShortcut(event.key);

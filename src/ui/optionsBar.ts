@@ -36,7 +36,9 @@ export function createOptionsBar(ctx: AppContext): OptionsBar {
         return Number.isNaN(value) ? 0 : value;
     }
 
-    const brushSizeInput = numberInput(store.brushSize, 1, 500, 1, () => store.setBrushSize(readNumber(brushSizeInput)));
+    const brushSizeInput = numberInput(store.activeBrushSize, 1, 500, 1, () =>
+        store.setActiveBrushSize(readNumber(brushSizeInput)),
+    );
     brushSizeInput.title = 'Brush size in pixels.';
     const brushOpacityInput = numberInput(Math.round(store.brushOpacity * 100), 0, 100, 1, () =>
         store.setBrushOpacity(clamp(readNumber(brushOpacityInput) / 100, 0, 1)),
@@ -336,8 +338,12 @@ export function createOptionsBar(ctx: AppContext): OptionsBar {
 
     function refresh(): void {
         if (document.activeElement !== brushSizeInput) {
-            brushSizeInput.value = String(store.brushSize);
+            brushSizeInput.value = String(store.activeBrushSize);
         }
+        brushSizeInput.title =
+            store.activeTool === 'eraser' && !store.settings.shareEraserSize
+                ? 'Eraser size in pixels.'
+                : 'Brush size in pixels.';
         if (document.activeElement !== brushOpacityInput) {
             brushOpacityInput.value = String(Math.round(store.brushOpacity * 100));
         }

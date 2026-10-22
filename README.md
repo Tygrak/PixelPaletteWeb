@@ -54,9 +54,10 @@ npm run preview  # serve the production build
   duo-tone palettes; threshold, random, ordered (Bayer), Floyd–Steinberg and
   min-average-error dithering.
 - **Adjustments:** invert colors, grayscale, rotate, flip, HSL shift, blur,
-  drop shadow (color, offset X/Y, softness, opacity), Sobel edge detection
-  with hysteresis and auto thresholds, and compare — all in one Adjustments
-  panel.
+  drop shadow (color, offset X/Y, softness, opacity — 100% by default — and a
+  connect-to-layer sweep that closes the gap between the layer and its shadow),
+  Sobel edge detection with hysteresis and auto thresholds, and compare — all
+  in one Adjustments panel.
 - **Project files:** save the whole session — every layer, frame and the
   palette — as a `.pixelpalette` file and reopen it later, instead of only
   exporting flattened images.
@@ -93,7 +94,8 @@ Change the brush size with `[` and `]` (step of 1 while the size is 10 or
 less, otherwise 2). Number keys pick palette colors (`1`-`9`, `0` for the
 tenth); while a brush tool (Brush, Eraser, Clone, Heal, Knife) is active, hold
 `Shift` with a number to pick the same slot in the brush library instead
-(`Shift + 1` = Round, `Shift + 2` = Soft Round, ...).
+(`Shift + 1` = Round, `Shift + 2` = Soft Round, ...). With `Alt` held, the
+brackets and numbers navigate layers instead (see below).
 
 ## Editing shortcuts
 
@@ -120,6 +122,8 @@ tenth); while a brush tool (Brush, Eraser, Clone, Heal, Knife) is active, hold
 | Group Selected Layers (needs two or more selected) | `Ctrl + G` |
 | Ungroup (same shortcut, with only a group selected) | `Ctrl + G` |
 | Rename the active layer (inline, in the visible Layers list) | `Ctrl + R` |
+| Focus the layer below / above | `Alt + [` / `Alt + ]` |
+| Focus a layer by its position from the top (`1` = topmost) | `Alt + 1` ... `Alt + 9` |
 
 ## Saving
 
