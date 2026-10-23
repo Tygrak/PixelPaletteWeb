@@ -32,7 +32,8 @@ npm run preview  # serve the production build
   moving/scaling/rotating the selected pixels. The Move tool frames the layer's
   visible content the same way, so it can be scaled and rotated without a
   selection; while scaling, `Shift` scales about the box center, `Alt` keeps
-  the aspect ratio, and `Shift + Alt` does both. With the Move tool selected,
+  the aspect ratio, and `Shift + Alt` does both. While rotating, `Shift` snaps
+  to 45° increments. With the Move tool selected,
   the arrow keys nudge by one pixel — hold `Shift` for ten (consecutive nudges
   undo together).
 - **Symmetry modifiers:** mirror or rotational guides that copy brush strokes

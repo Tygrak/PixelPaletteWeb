@@ -48,17 +48,73 @@ export const DEFAULT_SETTINGS: Settings = {
 export const AUTO_SAVE_MIN = 1;
 export const AUTO_SAVE_MAX = 50;
 
+// Stored settings are a runtime boundary: the JSON may be old, hand-edited or
+// corrupted, so every field is parsed and range-checked instead of trusted.
+// Unknown fields are dropped. Invalid fields fall back to their default.
+
+function numberSetting(value: unknown, fallback: number, min: number, max: number): number {
+    if (typeof value !== 'number' || !Number.isFinite(value)) {
+        return fallback;
+    }
+    return Math.min(max, Math.max(min, value));
+}
+
+function integerSetting(
+    value: unknown,
+    fallback: number,
+    min: number,
+    max = Number.MAX_SAFE_INTEGER,
+): number {
+    return Math.round(numberSetting(value, fallback, min, max));
+}
+
+function booleanSetting(value: unknown, fallback: boolean): boolean {
+    return typeof value === 'boolean' ? value : fallback;
+}
+
+function enumSetting<T extends string>(value: unknown, allowed: readonly T[], fallback: T): T {
+    return typeof value === 'string' && (allowed as readonly string[]).includes(value) ? (value as T) : fallback;
+}
+
+const CANVAS_BACKDROPS: readonly CanvasBackdrop[] = ['checker', 'black', 'white'];
+const SAVE_FORMATS: readonly SaveFormat[] = ['project', 'storage', 'current', 'grid', 'separate', 'gif'];
+
 export function loadSettings(): Settings {
+    let parsed: unknown;
     try {
         const raw = localStorage.getItem(STORAGE_KEY);
-        if (raw) {
-            const parsed = JSON.parse(raw) as Partial<Settings>;
-            return { ...DEFAULT_SETTINGS, ...parsed };
+        if (!raw) {
+            return { ...DEFAULT_SETTINGS };
         }
+        parsed = JSON.parse(raw);
     } catch {
         // localStorage unavailable or corrupt; fall back to defaults.
+        return { ...DEFAULT_SETTINGS };
     }
-    return { ...DEFAULT_SETTINGS };
+    if (parsed === null || typeof parsed !== 'object' || Array.isArray(parsed)) {
+        return { ...DEFAULT_SETTINGS };
+    }
+    const data = parsed as Record<string, unknown>;
+    return {
+        canvasWidth: integerSetting(data.canvasWidth, DEFAULT_SETTINGS.canvasWidth, 1),
+        canvasHeight: integerSetting(data.canvasHeight, DEFAULT_SETTINGS.canvasHeight, 1),
+        backgroundColor:
+            typeof data.backgroundColor === 'string' && /^#[0-9a-f]{6}$/i.test(data.backgroundColor)
+                ? data.backgroundColor
+                : DEFAULT_SETTINGS.backgroundColor,
+        blankNewImage: booleanSetting(data.blankNewImage, DEFAULT_SETTINGS.blankNewImage),
+        animationMode: booleanSetting(data.animationMode, DEFAULT_SETTINGS.animationMode),
+        onionSkin: booleanSetting(data.onionSkin, DEFAULT_SETTINGS.onionSkin),
+        onionOpacity: numberSetting(data.onionOpacity, DEFAULT_SETTINGS.onionOpacity, 0, 1),
+        canvasBackdrop: enumSetting(data.canvasBackdrop, CANVAS_BACKDROPS, DEFAULT_SETTINGS.canvasBackdrop),
+        minimap: booleanSetting(data.minimap, DEFAULT_SETTINGS.minimap),
+        paletteSize: integerSetting(data.paletteSize, DEFAULT_SETTINGS.paletteSize, 1, 256),
+        saveFormat: enumSetting(data.saveFormat, SAVE_FORMATS, DEFAULT_SETTINGS.saveFormat),
+        saveColumns: integerSetting(data.saveColumns, DEFAULT_SETTINGS.saveColumns, 0),
+        autoSaveRecent: booleanSetting(data.autoSaveRecent, DEFAULT_SETTINGS.autoSaveRecent),
+        autoSaveCount: integerSetting(data.autoSaveCount, DEFAULT_SETTINGS.autoSaveCount, AUTO_SAVE_MIN, AUTO_SAVE_MAX),
+        shareEraserSize: booleanSetting(data.shareEraserSize, DEFAULT_SETTINGS.shareEraserSize),
+    };
 }
 
 export function saveSettings(settings: Settings): void {

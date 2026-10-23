@@ -2,28 +2,12 @@
 // paste an image from the clipboard, or pick an auto-saved recent file.
 
 import { createDialog, h } from '../shared/dom';
-import { imageDataFromBlob, pickFile } from '../shared/files';
+import { clipboardImageFile, imageDataFromBlob, pickFile } from '../shared/files';
 import { PROJECT_EXTENSION } from '../core/project';
 import { listRecent, RecentEntry } from '../core/recentFiles';
 import { createRecentTile } from './startScreen';
 
 export type OpenFileChoice = { file: File } | { image: ImageData } | { recent: RecentEntry };
-
-function clipboardImageFile(event: ClipboardEvent): File | null {
-    const items = event.clipboardData?.items;
-    if (!items) {
-        return null;
-    }
-    for (let i = 0; i < items.length; i++) {
-        if (items[i].type.startsWith('image/')) {
-            const file = items[i].getAsFile();
-            if (file) {
-                return file;
-            }
-        }
-    }
-    return null;
-}
 
 export function openFileDialog(): Promise<OpenFileChoice | null> {
     return new Promise((resolve) => {

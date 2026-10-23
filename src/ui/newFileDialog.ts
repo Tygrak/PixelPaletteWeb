@@ -3,28 +3,12 @@
 // The size applies to this document only; the Settings defaults stay.
 
 import { createDialog, h, num, numeric, row, rowHint } from '../shared/dom';
-import { imageDataFromBlob } from '../shared/files';
+import { clipboardImageFile, imageDataFromBlob } from '../shared/files';
 import type { Store } from '../core/store';
 
 export type NewFileChoice =
     | { image: ImageData; animationMode: boolean }
     | { width: number; height: number; animationMode: boolean };
-
-function clipboardImageFile(event: ClipboardEvent): File | null {
-    const items = event.clipboardData?.items;
-    if (!items) {
-        return null;
-    }
-    for (let i = 0; i < items.length; i++) {
-        if (items[i].type.startsWith('image/')) {
-            const file = items[i].getAsFile();
-            if (file) {
-                return file;
-            }
-        }
-    }
-    return null;
-}
 
 // Common canvas sizes offered as presets in the New File dialog. Pixel-art
 // squares first, then a couple of standard screen resolutions.

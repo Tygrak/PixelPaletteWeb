@@ -122,6 +122,10 @@ export function applyCanvasLayout(): void {
     canvasStack.style.width = `${displayedWidth}px`;
     canvasStack.style.height = `${displayedHeight}px`;
     canvasStack.style.transform = `translate(${offsetX}px, ${offsetY}px)`;
+    // Below 100% the browser downsamples the document. Let it filter (smooth)
+    // there so zoomed-out pixels do not alias; at 100% and above the canvases
+    // stay pixelated and crisp.
+    canvasStack.classList.toggle('smooth-scale', scale < 1);
     zoomLabel.textContent = `${Math.round(scale * 100)}%`;
     renderMinimap();
     // The selection border and transform box are sized for the zoom level, so

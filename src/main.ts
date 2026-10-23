@@ -121,8 +121,7 @@ function generateAutoPalette(image: ImageData): void {
     }
     const colors = distinctColors(medianCut(sample, Math.min(requested, unique)));
     if (colors.length > 0) {
-        store.palette = colors;
-        store.emit();
+        store.setPalette(colors);
     }
 }
 
@@ -164,7 +163,7 @@ function newDocument(width?: number, height?: number): void {
     const background = store.settings.blankNewImage ? null : hexToColor(store.settings.backgroundColor);
     // Like openDocument, set the palette before the document so it becomes the
     // document's initial palette (the Restore target).
-    store.palette = BASE_COLORS.map((color) => ({ ...color }));
+    store.setPalette(BASE_COLORS, false);
     store.newDocument(w, h, background);
     // New documents start with the default name (see openDocument).
     beginNewSession();

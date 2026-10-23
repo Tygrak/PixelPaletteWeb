@@ -22,6 +22,13 @@ import { rectSelection, Selection } from '../core/selection';
 // Floating selection: pixels lifted off the active layer that can be moved,
 // scaled and rotated before they are baked back (or cancelled).
 
+// Rotation step applied while Shift is held during a rotate drag.
+const ROTATION_SNAP = Math.PI / 4;
+
+function snapRotation(angle: number): number {
+    return Math.round(angle / ROTATION_SNAP) * ROTATION_SNAP;
+}
+
 export interface TransformDrag {
     mode: 'move' | 'scale' | 'rotate';
     handle: Exclude<BoxHit, null>;
@@ -625,7 +632,8 @@ export function applyTransform(x: number, y: number, shiftKey: boolean, altKey =
     }
     if (transformDrag.mode === 'rotate') {
         const angle = Math.atan2(y - floating.cy, x - floating.cx);
-        floating.rotation = transformDrag.startRotation + (angle - transformDrag.startAngle);
+        const rotation = transformDrag.startRotation + (angle - transformDrag.startAngle);
+        floating.rotation = shiftKey ? snapRotation(rotation) : rotation;
         return;
     }
 

@@ -151,7 +151,7 @@ export function createOptionsBar(ctx: AppContext): OptionsBar {
             store.palette.forEach((color, index) => {
                 const dot = h('button', {
                     class: 'palette-dot',
-                    onclick: () => store.setForeground(store.palette[index]),
+                    onclick: () => store.setForeground(color),
                 });
                 // Double click edits this palette entry in the color picker. When it is
                 // the selected (active) swatch, the edited color also becomes the

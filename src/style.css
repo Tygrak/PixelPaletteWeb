@@ -352,6 +352,13 @@ body {
     image-rendering: pixelated;
 }
 
+/* When zoomed out below 100% the document is downscaled; smooth it instead of
+   dropping pixels with nearest-neighbor, which would alias/moiré. */
+.canvas-stack.smooth-scale .main-canvas,
+.canvas-stack.smooth-scale .overlay-canvas {
+    image-rendering: auto;
+}
+
 .overlay-canvas {
     position: absolute;
     inset: 0;

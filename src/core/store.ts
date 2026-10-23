@@ -1400,6 +1400,42 @@ export class Store {
         this.emit();
     }
 
+    // Replaces the whole palette (palette generation, import, Clear).
+    // Palette changes never touch pixels, so they only emit: no revision bump,
+    // no composite invalidation and no history snapshot. `setPaletteColor` is
+    // the one palette edit that records history, because the palette lock can
+    // recolor the active layer.
+    // Pass emit: false only when the caller emits immediately afterwards:
+    // newDocument sets the palette before opening the document so it becomes
+    // that document's Restore target.
+    setPalette(colors: RGB[], emit = true): void {
+        this.palette = colors.map((color) => ({ ...color }));
+        if (emit) {
+            this.emit();
+        }
+    }
+
+    clearPalette(): void {
+        if (this.palette.length === 0) {
+            return;
+        }
+        this.palette = [];
+        this.emit();
+    }
+
+    addPaletteColor(color: RGB): void {
+        this.palette.push({ ...color });
+        this.emit();
+    }
+
+    removePaletteColor(index: number): void {
+        if (index < 0 || index >= this.palette.length) {
+            return;
+        }
+        this.palette.splice(index, 1);
+        this.emit();
+    }
+
     // Replaces a palette entry. With the palette lock's apply-on-change option,
     // every active-layer pixel that exactly matches the old color is recolored
     // to the new one (unlike the nearest-color remap of applyPaletteToImage).

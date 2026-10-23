@@ -228,7 +228,10 @@ Pixel repaints use the store's damage rectangles: after a local edit
 
 Zoom/pan are `zoom`, `offsetX`, `offsetY`. `applyCanvasLayout()` sizes the
 `.canvas-stack` to the displayed image and applies a `translate` transform;
-`toImagePoint()` maps client coordinates back to document pixels.
+`toImagePoint()` maps client coordinates back to document pixels. The canvases
+use `image-rendering: pixelated` so magnified pixels stay crisp; when the
+display scale is below 100%, `applyCanvasLayout()` adds `smooth-scale` to let
+the browser filter the downscaled image instead of aliasing it.
 
 When enabled in Settings, the **minimap** (bottom-right corner) shows a cached
 downscaled thumbnail plus the viewport rectangle; clicking or dragging on it
@@ -364,8 +367,9 @@ one, otherwise the visible content of the layers it acts on (the active layer,
 or every layer of a multi-selection); grabbing a handle lifts that content into
 the floating transform. A multi-layer float keeps one `FloatingPart` per layer
 and draws them as a single buffer, so scaling/rotating writes each layer's
-transformed pixels back into its own layer instead of merging them. `Enter`
-commits and `Escape` cancels.
+transformed pixels back into its own layer instead of merging them. Holding
+`Shift` while rotating snaps to 45° increments. `Enter` commits and `Escape`
+cancels.
 
 ## Animation (`ui/timeline.ts`, `core/store.ts`)
 

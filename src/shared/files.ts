@@ -53,6 +53,23 @@ export function loadImageFile(): Promise<ImageData | null> {
     );
 }
 
+// First image file pasted onto a clipboard event, if any.
+export function clipboardImageFile(event: ClipboardEvent): File | null {
+    const items = event.clipboardData?.items;
+    if (!items) {
+        return null;
+    }
+    for (let i = 0; i < items.length; i++) {
+        if (items[i].type.startsWith('image/')) {
+            const file = items[i].getAsFile();
+            if (file) {
+                return file;
+            }
+        }
+    }
+    return null;
+}
+
 export function saveImageFile(img: ImageData, filename = 'image.png'): void {
     const canvas = document.createElement('canvas');
     canvas.width = img.width;

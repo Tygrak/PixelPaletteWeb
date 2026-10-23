@@ -34,10 +34,13 @@ export interface LayerList {
     renameActive(): void;
 }
 
-interface DisplayRow {
+interface RowBase {
     node: LayerNode;
     parent: LayerGroup | null;
     depth: number;
+}
+
+interface DisplayRow extends RowBase {
     element: HTMLElement;
 }
 
@@ -134,7 +137,7 @@ export function createLayerList(options: LayerListOptions): LayerList {
         input.select();
     };
 
-    const createElement = (row: DisplayRow): HTMLElement => {
+    const createElement = (row: RowBase): HTMLElement => {
         const node = row.node;
         const eye = h('button', {
             class: `layer-eye${node.visible ? '' : ' off'}`,
@@ -196,8 +199,10 @@ export function createLayerList(options: LayerListOptions): LayerList {
     const buildRows = (nodes: LayerNode[], parent: LayerGroup | null, depth: number, out: DisplayRow[]): void => {
         for (let i = nodes.length - 1; i >= 0; i--) {
             const node = nodes[i];
-            const row: DisplayRow = { node, parent, depth, element: null as unknown as HTMLElement };
-            row.element = createElement(row);
+            const base: RowBase = { node, parent, depth };
+            // The element is only built after the base data exists, so the row
+            // never needs a placeholder for its element.
+            const row: DisplayRow = { ...base, element: createElement(base) };
             out.push(row);
             if (isGroup(node)) {
                 buildRows(node.children, node, depth + 1, out);
@@ -207,7 +212,12 @@ export function createLayerList(options: LayerListOptions): LayerList {
 
     // --- Drag & drop ---
 
-    const onRowDown = (event: PointerEvent, row: DisplayRow): void => {
+    const onRowDown = (event: PointerEvent, row: RowBase): void => {
+        // The listener is attached to the row element itself.
+        const rowElement = event.currentTarget;
+        if (!(rowElement instanceof HTMLElement)) {
+            return;
+        }
         if ((event.target as HTMLElement).closest('input, button') || event.button !== 0) {
             return;
         }
@@ -223,7 +233,7 @@ export function createLayerList(options: LayerListOptions): LayerList {
             : [row.node.id];
         drag = {
             pointerId: event.pointerId,
-            row: row.element,
+            row: rowElement,
             startY: event.clientY,
             moved: false,
             movingIds,
