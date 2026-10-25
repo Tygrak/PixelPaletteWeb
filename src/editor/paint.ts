@@ -16,6 +16,8 @@ import { cloneStamp, healStamp, knifeStamp, stampBrush, ToolId } from '../core/t
 
 type StrokeKind = 'brush' | 'eraser' | 'clone' | 'heal' | 'knife';
 
+export type StrokeTool = StrokeKind;
+
 let strokeImage: ImageData | null = null;
 let strokeSource: ImageData | null = null;
 let strokeKind: StrokeKind = 'brush';
@@ -59,7 +61,7 @@ const PENDING_MOVE_LIMIT = 6;
 let cloneSource: { x: number; y: number } | null = null;
 let cloneOffset: { x: number; y: number } | null = null;
 
-export function isBrushTool(tool: ToolId): boolean {
+export function isBrushTool(tool: ToolId): tool is StrokeTool {
     return tool === 'brush' || tool === 'eraser' || tool === 'clone' || tool === 'heal' || tool === 'knife';
 }
 

@@ -63,6 +63,7 @@ import {
     startCloneStroke,
     startHealStroke,
     startKnifeStroke,
+    type StrokeTool,
 } from './editor/paint';
 import { medianCut } from './core/palette';
 import { combineSelection, wandSelection } from './core/selection';
@@ -469,6 +470,11 @@ let panLastX = 0;
 let panLastY = 0;
 let spaceHeld = false;
 
+// A brush press that started in the workspace around the image is held until
+// the pointer actually reaches the document. Waiting avoids an empty undo step
+// (and stroke buffer allocation) when the press never paints.
+let outsideStroke: { x: number; y: number; pressure: number } | null = null;
+
 let moving: {
     startClientX: number;
     startClientY: number;
@@ -639,6 +645,109 @@ function pointerPressure(event: PointerEvent): number {
     return 1;
 }
 
+// Starts a stroke for any brush-like tool. Shared by presses on the canvas and
+// by presses that began in the workspace around it, so both take the same path.
+function beginPaintStroke(tool: StrokeTool, x: number, y: number, pressure: number, shiftKey: boolean): void {
+    switch (tool) {
+        case 'brush':
+        case 'eraser': {
+            const image = store.beginPaint();
+            if (!image) {
+                return;
+            }
+            const kind = tool === 'eraser' ? 'eraser' : 'brush';
+            const last = getLastPaintPoint();
+            if (shiftKey && last) {
+                // Shift+click: straight line from the previous stroke's end to
+                // this point (a single, finished stroke).
+                startBrushStroke(kind, image, last.x, last.y, pressure);
+                continueStroke(x, y, pressure);
+                endStroke();
+                return;
+            }
+            startBrushStroke(kind, image, x, y, pressure);
+            return;
+        }
+        case 'clone': {
+            const before = store.activeLayer;
+            if (!before || !getCloneSource()) {
+                return;
+            }
+            const source = before.image;
+            const image = store.beginPaint();
+            if (!image) {
+                return;
+            }
+            startCloneStroke(source, image, x, y, pressure);
+            return;
+        }
+        case 'heal': {
+            const before = store.activeLayer;
+            if (!before) {
+                return;
+            }
+            const source = before.image;
+            const image = store.beginPaint();
+            if (!image) {
+                return;
+            }
+            startHealStroke(source, image, x, y, pressure);
+            return;
+        }
+        case 'knife': {
+            const image = store.beginPaint();
+            if (!image) {
+                return;
+            }
+            startKnifeStroke(image, x, y, pressure);
+            return;
+        }
+    }
+}
+
+// True when the segment enters the document. Lets a held outside press start as
+// soon as its path reaches the image, even if one fast pointer event skipped
+// across the canvas between samples.
+function segmentTouchesDocument(x0: number, y0: number, x1: number, y1: number): boolean {
+    const width = store.width;
+    const height = store.height;
+    if (width <= 0 || height <= 0) {
+        return false;
+    }
+    const inside = (x: number, y: number): boolean => x >= 0 && y >= 0 && x < width && y < height;
+    if (inside(x0, y0) || inside(x1, y1)) {
+        return true;
+    }
+    // Liang-Barsky clipping of the segment against the document rectangle.
+    const dx = x1 - x0;
+    const dy = y1 - y0;
+    let t0 = 0;
+    let t1 = 1;
+    const clip = (p: number, q: number): boolean => {
+        if (p === 0) {
+            return q >= 0;
+        }
+        const r = q / p;
+        if (p < 0) {
+            if (r > t1) {
+                return false;
+            }
+            if (r > t0) {
+                t0 = r;
+            }
+        } else {
+            if (r < t0) {
+                return false;
+            }
+            if (r < t1) {
+                t1 = r;
+            }
+        }
+        return true;
+    };
+    return clip(-dx, x0) && clip(dx, width - x0) && clip(-dy, y0) && clip(dy, height - y0);
+}
+
 function updateHoverCursor(x: number, y: number): void {
     const tool = store.activeTool;
     if (store.symmetry.transformMode) {
@@ -679,6 +788,7 @@ canvas.addEventListener('pointerdown', (event) => {
         return;
     }
     canvas.setPointerCapture(event.pointerId);
+    outsideStroke = null;
     hideSamplePreview();
     const point = toImagePoint(event.clientX, event.clientY);
     const tool = store.activeTool;
@@ -724,64 +834,22 @@ canvas.addEventListener('pointerdown', (event) => {
             sampleAt(img, point.x, point.y, event.clientX, event.clientY);
             break;
         case 'brush':
-        case 'eraser': {
-            const image = store.beginPaint();
-            if (!image) {
-                break;
-            }
-            const pressure = pointerPressure(event);
-            const kind = tool === 'eraser' ? 'eraser' : 'brush';
-            const last = getLastPaintPoint();
-            if (event.shiftKey && last) {
-                // Shift+click: straight line from the previous stroke's end to
-                // the clicked point (a single, finished stroke).
-                startBrushStroke(kind, image, last.x, last.y, pressure);
-                continueStroke(point.x, point.y, pressure);
-                endStroke();
-                break;
-            }
-            startBrushStroke(kind, image, point.x, point.y, pressure);
+        case 'eraser':
+            beginPaintStroke(tool, point.x, point.y, pointerPressure(event), event.shiftKey);
             break;
-        }
         case 'clone': {
             if (event.altKey) {
                 setCloneSource({ x: point.x, y: point.y });
                 redrawOverlay();
                 break;
             }
-            const before = store.activeLayer;
-            if (!before || !getCloneSource()) {
-                break;
-            }
-            const source = before.image;
-            const image = store.beginPaint();
-            if (!image) {
-                break;
-            }
-            startCloneStroke(source, image, point.x, point.y, pointerPressure(event));
+            beginPaintStroke(tool, point.x, point.y, pointerPressure(event), false);
             break;
         }
-        case 'heal': {
-            const before = store.activeLayer;
-            if (!before) {
-                break;
-            }
-            const source = before.image;
-            const image = store.beginPaint();
-            if (!image) {
-                break;
-            }
-            startHealStroke(source, image, point.x, point.y, pointerPressure(event));
+        case 'heal':
+        case 'knife':
+            beginPaintStroke(tool, point.x, point.y, pointerPressure(event), false);
             break;
-        }
-        case 'knife': {
-            const image = store.beginPaint();
-            if (!image) {
-                break;
-            }
-            startKnifeStroke(image, point.x, point.y, pointerPressure(event));
-            break;
-        }
         case 'bucket': {
             const image = store.beginPaint();
             const layer = store.activeLayer;
@@ -868,12 +936,50 @@ canvas.addEventListener('pointerdown', (event) => {
     }
 });
 
+// Pressing the gray workspace around the image starts a brush stroke too. The
+// press is held until the pointer reaches the document (see pointermove), so a
+// stray click outside never creates an undo step, and dragging in paints from
+// the entry point along the real path.
+canvasArea.addEventListener('pointerdown', (event) => {
+    if (!store.current || store.playing || event.button !== 0) {
+        return;
+    }
+    // Only the empty workspace: the canvas and minimap have their own handlers.
+    if (event.target !== canvasArea || spaceHeld || event.altKey || store.symmetry.transformMode) {
+        return;
+    }
+    if (!isBrushTool(store.activeTool)) {
+        return;
+    }
+    const point = toImagePoint(event.clientX, event.clientY);
+    hideSamplePreview();
+    // Capture on the canvas so its existing move/up handlers (and the active
+    // stroke state they drive) take over as soon as the pointer crosses in.
+    canvas.setPointerCapture(event.pointerId);
+    outsideStroke = { x: point.x, y: point.y, pressure: pointerPressure(event) };
+});
+
 canvas.addEventListener('pointermove', (event) => {
     const img = store.current;
     if (!img || store.playing) {
         return;
     }
     const point = toImagePoint(event.clientX, event.clientY);
+
+    if (outsideStroke) {
+        if (!segmentTouchesDocument(outsideStroke.x, outsideStroke.y, point.x, point.y)) {
+            return;
+        }
+        const held = outsideStroke;
+        outsideStroke = null;
+        if (isBrushTool(store.activeTool)) {
+            beginPaintStroke(store.activeTool, held.x, held.y, held.pressure, false);
+            if (hasActiveStroke()) {
+                continueStroke(point.x, point.y, pointerPressure(event), event.shiftKey);
+            }
+        }
+        return;
+    }
 
     if (symmetryDrag) {
         applySymmetryDrag(point.x, point.y, event.shiftKey);
@@ -1014,6 +1120,7 @@ function endPointer(event: PointerEvent): void {
     if (canvas.hasPointerCapture(event.pointerId)) {
         canvas.releasePointerCapture(event.pointerId);
     }
+    outsideStroke = null;
     canvas.style.cursor = '';
 
     if (panning) {

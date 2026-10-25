@@ -1,6 +1,6 @@
 // Port of PixelPalette/Algorithm/ColorAdjustments.cs
 
-import { clampRgbToColor, colorToHsl, hslToColor, RGB } from '../shared/color';
+import { colorToHsl, hslToColor } from '../shared/color';
 import { colorArrayFromImage, createEmptyImage, setPixel } from '../shared/image';
 
 // Inverts the RGB channels of every pixel (alpha is preserved, so transparent
@@ -48,59 +48,99 @@ export function shiftHsl(img: ImageData, hueShift: number, saturation: number, l
     return result;
 }
 
+// Separable Gaussian blur. Works on premultiplied alpha and blurs the alpha
+// channel too, so transparent pixels contribute no color and edges fade out
+// instead of turning into opaque black.
 export function blurImage(img: ImageData, sigma: number): ImageData {
-    const range = Math.trunc(1 + sigma * 2);
-    const c = 1 / Math.sqrt(sigma * sigma * 2 * Math.PI);
-    const blurMatrix = new Array<number>(range);
-    for (let i = 0; i < range; i++) {
-        blurMatrix[i] = Math.pow(Math.E, -(i * i) / (2 * sigma * sigma)) * c;
-    }
-
-    const colors = colorArrayFromImage(img);
-    const colors2 = new Array<RGB>(colors.length);
-    const result = createEmptyImage(img.width, img.height);
     const width = img.width;
     const height = img.height;
+    const result = createEmptyImage(width, height);
+    if (width === 0 || height === 0) {
+        return result;
+    }
+    if (!(sigma > 0)) {
+        result.data.set(img.data);
+        return result;
+    }
+    // Kernel for offsets 0..radius-1, applied symmetrically. Normalizing it
+    // keeps a constant region exactly constant despite the truncated tails.
+    const radius = Math.max(1, Math.trunc(1 + sigma * 2));
+    const kernel = new Float32Array(radius);
+    let total = 0;
+    for (let i = 0; i < radius; i++) {
+        kernel[i] = Math.exp(-(i * i) / (2 * sigma * sigma));
+        total += i === 0 ? kernel[i] : kernel[i] * 2;
+    }
+    for (let i = 0; i < radius; i++) {
+        kernel[i] /= total;
+    }
 
-    for (let x = 0; x < width; x++) {
-        for (let y = 0; y < height; y++) {
+    // Premultiplied RGBA (alpha stored as 0..1), so transparent pixels carry
+    // no color weight.
+    const count = width * height;
+    const source = new Float32Array(count * 4);
+    const horizontal = new Float32Array(count * 4);
+    const src = img.data;
+    for (let i = 0; i < count; i++) {
+        const p = i * 4;
+        const alpha = src[p + 3] / 255;
+        source[p] = src[p] * alpha;
+        source[p + 1] = src[p + 1] * alpha;
+        source[p + 2] = src[p + 2] * alpha;
+        source[p + 3] = alpha;
+    }
+
+    const taps = radius * 2 - 1;
+    for (let y = 0; y < height; y++) {
+        const row = y * width;
+        for (let x = 0; x < width; x++) {
             let r = 0;
             let g = 0;
             let b = 0;
-            for (let i = x - range + 1; i < x + range; i++) {
-                const kernelIndex = Math.abs(x - i);
-                if (i < 0 || i >= width) {
-                    r += colors[x + y * width].r * blurMatrix[kernelIndex];
-                    g += colors[x + y * width].g * blurMatrix[kernelIndex];
-                    b += colors[x + y * width].b * blurMatrix[kernelIndex];
-                } else {
-                    r += colors[i + y * width].r * blurMatrix[kernelIndex];
-                    g += colors[i + y * width].g * blurMatrix[kernelIndex];
-                    b += colors[i + y * width].b * blurMatrix[kernelIndex];
-                }
+            let a = 0;
+            for (let tap = 0; tap < taps; tap++) {
+                const offset = tap - radius + 1;
+                const sx = x + offset < 0 ? 0 : x + offset >= width ? width - 1 : x + offset;
+                const weight = kernel[Math.abs(offset)];
+                const sp = (row + sx) * 4;
+                r += source[sp] * weight;
+                g += source[sp + 1] * weight;
+                b += source[sp + 2] * weight;
+                a += source[sp + 3] * weight;
             }
-            colors2[x + y * width] = clampRgbToColor(r, g, b);
+            const dp = (row + x) * 4;
+            horizontal[dp] = r;
+            horizontal[dp + 1] = g;
+            horizontal[dp + 2] = b;
+            horizontal[dp + 3] = a;
         }
     }
 
+    const out = result.data;
     for (let y = 0; y < height; y++) {
         for (let x = 0; x < width; x++) {
             let r = 0;
             let g = 0;
             let b = 0;
-            for (let j = y - range + 1; j < y + range; j++) {
-                const kernelIndex = Math.abs(y - j);
-                if (j < 0 || j >= height) {
-                    r += colors[x + y * width].r * blurMatrix[kernelIndex];
-                    g += colors[x + y * width].g * blurMatrix[kernelIndex];
-                    b += colors[x + y * width].b * blurMatrix[kernelIndex];
-                } else {
-                    r += colors2[x + j * width].r * blurMatrix[kernelIndex];
-                    g += colors2[x + j * width].g * blurMatrix[kernelIndex];
-                    b += colors2[x + j * width].b * blurMatrix[kernelIndex];
-                }
+            let a = 0;
+            for (let tap = 0; tap < taps; tap++) {
+                const offset = tap - radius + 1;
+                const sy = y + offset < 0 ? 0 : y + offset >= height ? height - 1 : y + offset;
+                const weight = kernel[Math.abs(offset)];
+                const sp = (sy * width + x) * 4;
+                r += horizontal[sp] * weight;
+                g += horizontal[sp + 1] * weight;
+                b += horizontal[sp + 2] * weight;
+                a += horizontal[sp + 3] * weight;
             }
-            setPixel(result, x, y, clampRgbToColor(r, g, b));
+            const dp = (y * width + x) * 4;
+            out[dp + 3] = a * 255;
+            if (a > 0) {
+                // Un-premultiply; Uint8ClampedArray rounds and clamps.
+                out[dp] = r / a;
+                out[dp + 1] = g / a;
+                out[dp + 2] = b / a;
+            }
         }
     }
     return result;
