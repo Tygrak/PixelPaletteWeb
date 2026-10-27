@@ -819,6 +819,11 @@ input[type='checkbox'] {
     border-top: 2px solid #000;
 }
 
+/* Panels that never report a status message should not reserve an empty strip. */
+.dock-footer:has(> .dock-status:empty) {
+    display: none;
+}
+
 .dock-status {
     color: #8f9998;
 }
