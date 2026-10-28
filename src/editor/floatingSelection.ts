@@ -40,6 +40,8 @@ export interface TransformDrag {
     startScaleY: number;
     startAngle: number;
     startRotation: number;
+    // Axis locked by holding Shift during a move (null = free movement).
+    shiftAxis: 'x' | 'y' | null;
 }
 
 let floating: Floating | null = null;
@@ -618,6 +620,7 @@ export function startTransformDrag(hit: Exclude<BoxHit, null>, pointX: number, p
         startScaleY: floating!.scaleY,
         startAngle: Math.atan2(pointY - active.cy, pointX - active.cx),
         startRotation: active.rotation,
+        shiftAxis: null,
     };
 }
 
@@ -626,8 +629,24 @@ export function applyTransform(x: number, y: number, shiftKey: boolean, altKey =
         return;
     }
     if (transformDrag.mode === 'move') {
-        floating.cx = transformDrag.startCx + (x - transformDrag.startX);
-        floating.cy = transformDrag.startCy + (y - transformDrag.startY);
+        let dx = x - transformDrag.startX;
+        let dy = y - transformDrag.startY;
+        // Shift locks the move to one axis, chosen from the first movement and
+        // kept until Shift is released.
+        if (shiftKey) {
+            if (transformDrag.shiftAxis === null && (dx !== 0 || dy !== 0)) {
+                transformDrag.shiftAxis = Math.abs(dx) >= Math.abs(dy) ? 'x' : 'y';
+            }
+            if (transformDrag.shiftAxis === 'x') {
+                dy = 0;
+            } else if (transformDrag.shiftAxis === 'y') {
+                dx = 0;
+            }
+        } else {
+            transformDrag.shiftAxis = null;
+        }
+        floating.cx = transformDrag.startCx + dx;
+        floating.cy = transformDrag.startCy + dy;
         return;
     }
     if (transformDrag.mode === 'rotate') {

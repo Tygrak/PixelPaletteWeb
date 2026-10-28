@@ -22,6 +22,10 @@ import { getActiveColorPicker } from '../ui/selectColor';
 
 export const canvas = h('canvas', { class: 'main-canvas' });
 const overlayCanvas = h('canvas', { class: 'overlay-canvas' });
+// The brush cursor is drawn on its own viewport-sized canvas at display
+// resolution, so its outline and pixel footprint stay crisp at high zoom
+// instead of being rasterized at document resolution and scaled up.
+const cursorCanvas = h('canvas', { class: 'cursor-canvas' });
 // Measure graphics are DOM elements (line, endpoint dots, distance label) so
 // they stay crisp and screen-sized at any zoom — the overlay canvas is
 // document-resolution and pixelated when scaled up.
@@ -39,7 +43,7 @@ const canvasStack = h('div', { class: 'canvas-stack' }, [canvas, overlayCanvas, 
 // Filled by the app wiring with the start screen (quick actions + recent
 // files) while no document is open.
 export const canvasPlaceholder = h('div', { class: 'placeholder' });
-export const canvasArea = h('div', { class: 'canvas-area' }, [canvasStack, canvasPlaceholder]);
+export const canvasArea = h('div', { class: 'canvas-area' }, [canvasStack, cursorCanvas, canvasPlaceholder]);
 const resizePreview = h('div', { class: 'resize-preview' });
 canvasArea.append(resizePreview);
 const minimapCanvas = h('canvas', { class: 'minimap-canvas' });
@@ -109,6 +113,7 @@ export function handleHalfSize(): number {
 export function applyCanvasLayout(): void {
     const img = store.current;
     if (!img) {
+        drawBrushCursor();
         return;
     }
     const area = canvasArea.getBoundingClientRect();
@@ -129,9 +134,12 @@ export function applyCanvasLayout(): void {
     zoomLabel.textContent = `${Math.round(scale * 100)}%`;
     renderMinimap();
     // The selection border and transform box are sized for the zoom level, so
-    // zooming in or out has to regenerate the overlay.
+    // zooming in or out has to regenerate the overlay. The brush cursor lives
+    // in screen space and also has to follow pans, where the scale stays put.
     if (scale !== overlayScale) {
         redrawOverlay();
+    } else {
+        drawBrushCursor();
     }
 }
 
@@ -564,41 +572,92 @@ export function redrawOverlay(): void {
             context.stroke();
         }
     }
-    if (hoverPoint && store.current && isBrushTool(store.activeTool) && !store.symmetry.transformMode) {
-        const brush = store.brush;
-        const size = store.activeBrushSize;
-        if (!brush.antialias && store.activeTool !== 'knife') {
-            // Show the exact pixels a hard (non-antialiased) tip will paint.
-            const cx = Math.floor(hoverPoint.x);
-            const cy = Math.floor(hoverPoint.y);
-            for (const { dx, dy } of brushFootprint(size, brush)) {
-                const px = cx + dx;
-                const py = cy + dy;
-                const dark = ((px + py) & 1) === 0;
-                context.fillStyle = dark ? 'rgba(0, 0, 0, 0.6)' : 'rgba(255, 255, 255, 0.6)';
-                context.fillRect(px, py, 1, 1);
-            }
-        } else {
-            const radius = Math.max(0.5, size / 2);
-            const hx = hoverPoint.x;
-            const hy = hoverPoint.y;
-            const drawTip = (r: number): void => {
-                context.beginPath();
-                context.ellipse(hx, hy, r, r * brush.roundness, brush.angle, 0, Math.PI * 2);
-                context.stroke();
-            };
-            context.lineWidth = 3;
-            context.strokeStyle = 'rgba(0, 0, 0, 0.6)';
-            drawTip(radius);
-            context.lineWidth = 1;
-            context.strokeStyle = 'rgba(255, 255, 255, 0.9)';
-            drawTip(radius);
-            // Inner ring marks where the falloff begins (the solid core).
-            if (brush.hardness > 0 && brush.hardness < 1) {
-                drawTip(radius * brush.hardness);
-            }
-        }
+    drawBrushCursor();
+}
+
+// Draws the brush/eraser cursor in screen space. Keeping it off the
+// document-resolution overlay means the outline and the hard-pixel footprint
+// are rasterized at display resolution instead of being scaled up with the
+// document.
+function drawBrushCursor(): void {
+    const context = cursorCanvas.getContext('2d');
+    if (!context) {
+        return;
     }
+    const area = canvasArea.getBoundingClientRect();
+    const dpr = window.devicePixelRatio || 1;
+    const width = Math.max(1, Math.round(area.width * dpr));
+    const height = Math.max(1, Math.round(area.height * dpr));
+    if (cursorCanvas.width !== width || cursorCanvas.height !== height) {
+        cursorCanvas.width = width;
+        cursorCanvas.height = height;
+    }
+    context.setTransform(1, 0, 0, 1, 0, 0);
+    context.clearRect(0, 0, width, height);
+    const img = store.current;
+    if (!hoverPoint || !img || !isBrushTool(store.activeTool) || store.symmetry.transformMode) {
+        return;
+    }
+    const rect = canvas.getBoundingClientRect();
+    if (rect.width === 0 || rect.height === 0) {
+        return;
+    }
+    const scale = rect.width / img.width;
+    const originX = rect.left - area.left;
+    const originY = rect.top - area.top;
+    const brush = store.brush;
+    const size = store.activeBrushSize;
+
+    // Match the old overlay canvas, which clipped the cursor at the document
+    // bounds. The clip is set in device pixels; later transforms only affect
+    // the drawing commands.
+    context.save();
+    context.beginPath();
+    context.rect(originX * dpr, originY * dpr, rect.width * dpr, rect.height * dpr);
+    context.clip();
+
+    if (!brush.antialias && store.activeTool !== 'knife') {
+        // Show the exact pixels a hard (non-antialiased) tip will paint, snapped
+        // to device pixels so every block has crisp edges.
+        const cx = Math.floor(hoverPoint.x);
+        const cy = Math.floor(hoverPoint.y);
+        for (const { dx, dy } of brushFootprint(size, brush)) {
+            const px = cx + dx;
+            const py = cy + dy;
+            const left = Math.round((originX + px * scale) * dpr);
+            const top = Math.round((originY + py * scale) * dpr);
+            const right = Math.round((originX + (px + 1) * scale) * dpr);
+            const bottom = Math.round((originY + (py + 1) * scale) * dpr);
+            const dark = ((px + py) & 1) === 0;
+            context.fillStyle = dark ? 'rgba(0, 0, 0, 0.6)' : 'rgba(255, 255, 255, 0.6)';
+            context.fillRect(left, top, Math.max(1, right - left), Math.max(1, bottom - top));
+        }
+        context.restore();
+        return;
+    }
+
+    // Outline and inner hardness ring are drawn in CSS pixels so their stroke
+    // width stays constant on screen at any zoom.
+    context.setTransform(dpr, 0, 0, dpr, 0, 0);
+    const radius = Math.max(0.5, (size / 2) * scale);
+    const hx = originX + hoverPoint.x * scale;
+    const hy = originY + hoverPoint.y * scale;
+    const drawTip = (r: number): void => {
+        context.beginPath();
+        context.ellipse(hx, hy, r, r * brush.roundness, brush.angle, 0, Math.PI * 2);
+        context.stroke();
+    };
+    context.lineWidth = 3;
+    context.strokeStyle = 'rgba(0, 0, 0, 0.6)';
+    drawTip(radius);
+    context.lineWidth = 1;
+    context.strokeStyle = 'rgba(255, 255, 255, 0.9)';
+    drawTip(radius);
+    // Inner ring marks where the falloff begins (the solid core).
+    if (brush.hardness > 0 && brush.hardness < 1) {
+        drawTip(radius * brush.hardness);
+    }
+    context.restore();
 }
 
 // --- Resize preview (during a resize-handle drag) ---

@@ -480,6 +480,8 @@ let moving: {
     startClientY: number;
     dx: number;
     dy: number;
+    // Axis locked by holding Shift during the drag (null = free movement).
+    shiftAxis: 'x' | 'y' | null;
     layers: { id: number; offsetX: number; offsetY: number }[];
 } | null = null;
 let sampling = false;
@@ -586,6 +588,7 @@ function beginMoveInteraction(event: PointerEvent, pointX: number, pointY: numbe
             startClientY: event.clientY,
             dx: 0,
             dy: 0,
+            shiftAxis: null,
             layers: targets.map((layer) => ({ id: layer.id, offsetX: layer.offsetX, offsetY: layer.offsetY })),
         };
     };
@@ -1074,8 +1077,23 @@ canvas.addEventListener('pointermove', (event) => {
 
     if (moving) {
         const scale = currentScale(img) || 1;
-        const dx = Math.round((event.clientX - moving.startClientX) / scale);
-        const dy = Math.round((event.clientY - moving.startClientY) / scale);
+        let dx = Math.round((event.clientX - moving.startClientX) / scale);
+        let dy = Math.round((event.clientY - moving.startClientY) / scale);
+        // Shift locks the drag to one axis; the axis is chosen from the first
+        // movement and kept until Shift is released, so crossing the diagonal
+        // does not make the layer jump to the other direction.
+        if (event.shiftKey) {
+            if (moving.shiftAxis === null && (dx !== 0 || dy !== 0)) {
+                moving.shiftAxis = Math.abs(dx) >= Math.abs(dy) ? 'x' : 'y';
+            }
+            if (moving.shiftAxis === 'x') {
+                dy = 0;
+            } else if (moving.shiftAxis === 'y') {
+                dx = 0;
+            }
+        } else {
+            moving.shiftAxis = null;
+        }
         if (dx !== moving.dx || dy !== moving.dy) {
             moving.dx = dx;
             moving.dy = dy;
